@@ -7,7 +7,7 @@ from .base import RetrieverBase
 from .vector_retriever import VectorRetriever
 from .hybrid_retriever import HybridRetriever
 from .reranker import Reranker, LLMReranker, RerankerBase
-from ame.vector_store.base import VectorStoreBase
+from ame.storage.faiss_store import FaissStore
 
 
 class RetrieverFactory:
@@ -16,7 +16,7 @@ class RetrieverFactory:
     @staticmethod
     def create_retriever(
         retriever_type: str,
-        vector_store: VectorStoreBase,
+        vector_store: FaissStore,
         **kwargs
     ) -> RetrieverBase:
         """
@@ -26,7 +26,7 @@ class RetrieverFactory:
             retriever_type: 检索器类型
                 - vector: 纯向量检索
                 - hybrid: 混合检索（向量+关键词+时间）
-            vector_store: 向量存储实例
+            vector_store: Faiss 向量存储实例
             **kwargs: 其他参数
                 - vector_weight: 向量权重（hybrid）
                 - keyword_weight: 关键词权重（hybrid）

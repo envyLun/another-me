@@ -9,8 +9,9 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from ame.llm_caller.caller import LLMCaller
-from ame.vector_store.factory import VectorStoreFactory
+from ame.storage.faiss_store import FaissStore
 from ame.retrieval.factory import RetrieverFactory
+from ame.mem.conversation_filter import ConversationFilter
 
 
 class MimicEngine:
@@ -19,23 +20,25 @@ class MimicEngine:
     def __init__(
         self,
         llm_caller: LLMCaller,
-        vector_store_type: str = "memu",
-        db_path: str = "/app/data/mem_vector_store"
+        vector_store_type: str = "faiss",
+        db_path: str = "/app/data/mem_vector_store",
+        enable_filter: bool = True
     ):
         """
         初始化模仿引擎
         
         Args:
             llm_caller: LLM 调用器
-            vector_store_type: 向量存储类型
+            vector_store_type: 向量存储类型（仅支持 faiss）
             db_path: 数据库路径
+            enable_filter: 是否启用对话过滤
         """
         self.llm_caller = llm_caller
         
         # 创建用户对话记录的向量存储
-        self.vector_store = VectorStoreFactory.create(
-            store_type=vector_store_type,
-            db_path=db_path
+        self.vector_store = FaissStore(
+            dimension=1536,
+            index_path=f"{db_path}/faiss.index"
         )
         
         # 创建检索器（更注重时间和关键词）
@@ -46,6 +49,9 @@ class MimicEngine:
             keyword_weight=0.4,
             time_weight=0.2
         )
+        
+        # 创建对话过滤器（v0.1.0 新增）
+        self.filter = ConversationFilter(llm_caller) if enable_filter else None
     
     async def learn_from_conversation(
         self,
@@ -54,14 +60,29 @@ class MimicEngine:
         metadata: Optional[Dict[str, Any]] = None
     ):
         """
-        从用户对话中学习
+        从用户对话中学习（集成对话过滤）
         
         Args:
             user_message: 用户消息
             context: 对话上下文
             metadata: 元数据
+            
+        Returns:
+            retention_type: 记忆保留类型（如果过滤器启用）
         """
         from datetime import datetime
+        
+        # v0.1.0: 对话过滤 - 判断是否需要存储
+        retention_type = None
+        if self.filter:
+            retention_type = await self.filter.classify_conversation(
+                user_message, 
+                context={"context": context, **(metadata or {})}
+            )
+            
+            # 如果是闲聊，不存储
+            if not self.filter.should_store(retention_type):
+                return retention_type
         
         # 构建学习数据
         doc = {
@@ -70,12 +91,15 @@ class MimicEngine:
             "timestamp": datetime.now().isoformat(),
             "metadata": {
                 "context": context or "",
+                "retention_type": retention_type.value if retention_type else "permanent",
                 **(metadata or {})
             }
         }
         
         # 存储到记忆库
         await self.vector_store.add_documents([doc])
+        
+        return retention_type
     
     async def generate_response(
         self,

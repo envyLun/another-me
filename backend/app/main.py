@@ -1,11 +1,20 @@
 """
 Another Me API - FastAPI 主应用
+v0.1.0 - 集成新的双存储架构
 """
+import sys
+from pathlib import Path
+
+# v0.1.0: 配置 sys.path 以导入 ame 核心模块
+AME_ROOT = Path(__file__).parent.parent.parent / "ame"
+if str(AME_ROOT) not in sys.path:
+    sys.path.insert(0, str(AME_ROOT))
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from app.api.v1 import health, rag, mem, config
+from app.api.v1 import health, rag, mem, config, work, life
 from app.middleware.logging import LoggingMiddleware
 from app.middleware.error_handler import ErrorHandlerMiddleware
 from app.core.config import get_settings
@@ -85,6 +94,19 @@ app.include_router(
     config.router,
     prefix="/api/v1/config",
     tags=["config"]
+)
+
+# v0.1.0 新增：工作和生活场景 API
+app.include_router(
+    work.router,
+    prefix="/api/v1/work",
+    tags=["work"]
+)
+
+app.include_router(
+    life.router,
+    prefix="/api/v1/life",
+    tags=["life"]
 )
 
 

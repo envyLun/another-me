@@ -1,4 +1,5 @@
 # Another Me Backend - 依赖包
+# v0.1.0 - 集成双存储架构和任务调度
 
 # FastAPI 框架
 fastapi==0.109.0
@@ -14,6 +15,9 @@ starlette==0.35.1
 
 # 日志
 coloredlogs>=15.0
+
+# 任务调度 (v0.1.0)
+apscheduler>=3.10.4
 
 # AME 引擎依赖
 # 确保与 AME 引擎的依赖保持一致

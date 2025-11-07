@@ -84,3 +84,53 @@ export interface HealthResponse {
   version: string;
   timestamp: string;
 }
+
+// ============ 知识库扩展类型 ============
+/** 文档详情 */
+export interface DocumentDetail extends DocumentInfo {
+  content: string;
+  doc_type: 'rag_knowledge' | 'mem_conversation' | 'mem_diary';
+  source: string;
+  timestamp: string;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+  metadata: {
+    file_path?: string;
+    embedding_model?: string;
+    vector_count?: number;
+  };
+}
+
+/** 分页响应 */
+export interface PaginatedResponse<T> {
+  success: boolean;
+  data: T[];
+  pagination: {
+    page: number;
+    page_size: number;
+    total: number;
+    total_pages: number;
+  };
+  timestamp: string;
+}
+
+/** 带来源的搜索结果 */
+export interface SearchResultWithSource {
+  content: string;
+  score: number;
+  source: {
+    document_id: string;
+    document_name: string;
+    chunk_index: number;
+  };
+  metadata: Record<string, any>;
+}
+
+/** 知识检索增强响应 */
+export interface EnhancedSearchResponse {
+  query: string;
+  results: SearchResultWithSource[];
+  total: number;
+  search_time: number;
+}

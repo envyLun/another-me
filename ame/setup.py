@@ -8,19 +8,29 @@ setup(
     packages=find_packages(),
     python_requires=">=3.9",
     install_requires=[
-        "numpy>=1.24.0",
+        "numpy>=1.24.0,<2.0.0",
         "openai>=1.0.0",
-        "chromadb>=0.4.0",
+        "pydantic>=2.0.0",
+        "faiss-cpu>=1.7.4",
+        "falkordb==1.0.8",
+        "redis>=5.0.1",
+        "spacy>=3.7.0",
         "Pillow>=10.0.0",
         "python-magic>=0.4.27",
         "psutil>=5.9.0",
+        "coloredlogs>=15.0",
     ],
     extras_require={
         "dev": [
-            "pytest>=7.0.0",
-            "pytest-asyncio>=0.21.0",
             "black>=23.0.0",
             "mypy>=1.0.0",
+            "isort>=5.12.0",
+        ],
+        "test": [
+            "pytest>=7.4.3",
+            "pytest-asyncio>=0.21.1",
+            "pytest-cov>=4.1.0",
+            "pytest-mock>=3.12.0",
         ],
     },
     classifiers=[

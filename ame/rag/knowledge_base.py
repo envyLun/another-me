@@ -11,7 +11,7 @@ import os
 # 添加父目录到路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from ame.vector_store.factory import VectorStoreFactory
+from ame.storage.faiss_store import FaissStore
 from ame.data_processor.processor import DataProcessor
 from ame.retrieval.factory import RetrieverFactory
 
@@ -21,19 +21,19 @@ class KnowledgeBase:
     
     def __init__(
         self,
-        vector_store_type: str = "memu",
+        vector_store_type: str = "faiss",
         db_path: str = "/app/data/rag_vector_store"
     ):
         """
         初始化知识库
         
         Args:
-            vector_store_type: 向量存储类型
+            vector_store_type: 向量存储类型（仅支持 faiss）
             db_path: 数据库路径
         """
-        self.vector_store = VectorStoreFactory.create(
-            store_type=vector_store_type,
-            db_path=db_path
+        self.vector_store = FaissStore(
+            dimension=1536,
+            index_path=f"{db_path}/faiss.index"
         )
         self.data_processor = DataProcessor()
         

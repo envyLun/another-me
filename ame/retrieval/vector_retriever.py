@@ -4,18 +4,18 @@
 
 from typing import List, Dict, Any, Optional
 from .base import RetrieverBase, RetrievalResult
-from ame.vector_store.base import VectorStoreBase
+from ame.storage.faiss_store import FaissStore
 
 
 class VectorRetriever(RetrieverBase):
     """向量检索器"""
     
-    def __init__(self, vector_store: VectorStoreBase):
+    def __init__(self, vector_store: FaissStore):
         """
         初始化向量检索器
         
         Args:
-            vector_store: 向量存储实例
+            vector_store: Faiss 向量存储实例
         """
         self.vector_store = vector_store
     

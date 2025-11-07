@@ -4,6 +4,7 @@
 
 from .base import RetrieverBase
 from .vector_retriever import VectorRetriever
+from .graph_retriever import GraphRetriever
 from .hybrid_retriever import HybridRetriever
 from .reranker import Reranker, RerankerBase
 from .factory import RetrieverFactory
@@ -11,6 +12,7 @@ from .factory import RetrieverFactory
 __all__ = [
     "RetrieverBase",
     "VectorRetriever",
+    "GraphRetriever",
     "HybridRetriever",
     "Reranker",
     "RerankerBase",

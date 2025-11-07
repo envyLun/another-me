@@ -1,18 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Card, Typography, Row, Col, Statistic, Button, Space, Spin, Alert } from 'antd';
+import { Card, Row, Col, Alert, Button, Space } from 'antd';
 import { 
-  FileTextOutlined, 
-  MessageOutlined, 
-  DatabaseOutlined,
-  RocketOutlined,
   CheckCircleOutlined,
-  WarningOutlined
+  WarningOutlined,
+  RocketOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '@/api/client';
-import { useConfigStore } from '@/store';
-
-const { Title, Paragraph } = Typography;
+import { useConfigStore, useMode } from '@/store';
+import { StatCard, ActionCard } from '@/components/common';
 
 export default function HomePage() {
   const navigate = useNavigate();
