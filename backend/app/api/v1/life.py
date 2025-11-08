@@ -9,46 +9,27 @@ from datetime import datetime
 
 from app.services.life_service import get_life_service, LifeService
 from app.core.logger import get_logger
+from app.models.requests import (
+    MoodAnalysisRequest,
+    TrackInterestsRequest,
+    LifeSummaryRequest,
+    LifeSuggestionsRequest,
+    RecordLifeEventRequest
+)
+from app.models.responses import (
+    MoodAnalysisResponse,
+    InterestTrackingResponse,
+    LifeSummaryResponse,
+    LifeSuggestionsResponse,
+    RecordLifeEventResponse
+)
 
 logger = get_logger(__name__)
 
 router = APIRouter()
 
 
-# ==================== 请求模型 ====================
-
-class MoodAnalysisRequest(BaseModel):
-    """心情分析请求"""
-    mood_entry: str = Field(..., description="心情记录内容")
-    entry_time: Optional[str] = Field(None, description="记录时间 ISO格式")
-
-
-class TrackInterestsRequest(BaseModel):
-    """兴趣追踪请求"""
-    period_days: int = Field(30, description="统计时间范围（天）", ge=1, le=365)
-
-
-class LifeSummaryRequest(BaseModel):
-    """生活总结请求"""
-    period: str = Field("week", description="总结周期: week/month/year")
-
-
-class LifeSuggestionsRequest(BaseModel):
-    """生活建议请求"""
-    context: Optional[str] = Field(None, description="上下文信息（当前困扰、目标等）")
-
-
-class RecordLifeEventRequest(BaseModel):
-    """生活事件记录请求"""
-    event_content: str = Field(..., description="事件内容")
-    event_type: str = Field("general", description="事件类型")
-    event_time: Optional[str] = Field(None, description="事件时间 ISO格式")
-    tags: Optional[List[str]] = Field(None, description="标签列表")
-
-
-# ==================== API 端点 ====================
-
-@router.post("/analyze-mood")
+@router.post("/analyze-mood", response_model=MoodAnalysisResponse)
 async def analyze_mood(
     request: MoodAnalysisRequest,
     service: LifeService = Depends(get_life_service)
@@ -70,14 +51,14 @@ async def analyze_mood(
             entry_time=entry_time
         )
         
-        return result
+        return MoodAnalysisResponse(**result)
         
     except Exception as e:
         logger.error(f"Failed to analyze mood: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/track-interests")
+@router.get("/track-interests", response_model=InterestTrackingResponse)
 async def track_interests(
     period_days: int = 30,
     service: LifeService = Depends(get_life_service)
@@ -94,14 +75,14 @@ async def track_interests(
             period_days=period_days
         )
         
-        return result
+        return InterestTrackingResponse(**result)
         
     except Exception as e:
         logger.error(f"Failed to track interests: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/life-summary")
+@router.post("/life-summary", response_model=LifeSummaryResponse)
 async def generate_life_summary(
     request: LifeSummaryRequest,
     service: LifeService = Depends(get_life_service)
@@ -122,7 +103,7 @@ async def generate_life_summary(
             period=request.period
         )
         
-        return result
+        return LifeSummaryResponse(**result)
         
     except HTTPException:
         raise
@@ -131,7 +112,7 @@ async def generate_life_summary(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/suggestions")
+@router.post("/suggestions", response_model=LifeSuggestionsResponse)
 async def get_life_suggestions(
     request: LifeSuggestionsRequest,
     service: LifeService = Depends(get_life_service)
@@ -148,14 +129,14 @@ async def get_life_suggestions(
             context=request.context
         )
         
-        return result
+        return LifeSuggestionsResponse(**result)
         
     except Exception as e:
         logger.error(f"Failed to get life suggestions: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/record-event")
+@router.post("/record-event", response_model=RecordLifeEventResponse)
 async def record_life_event(
     request: RecordLifeEventRequest,
     service: LifeService = Depends(get_life_service)
@@ -178,7 +159,7 @@ async def record_life_event(
             tags=request.tags
         )
         
-        return result
+        return RecordLifeEventResponse(**result)
         
     except Exception as e:
         logger.error(f"Failed to record life event: {e}")

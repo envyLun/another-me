@@ -10,11 +10,14 @@ from pathlib import Path
 # 导入 ame 核心模块
 from ame.repository.hybrid_repository import HybridRepository
 from ame.models.domain import Document, DocumentType, MemoryRetentionType
+from ame.engines.life_engine import LifeEngine
 from ame.mem.analyze_engine import AnalyzeEngine
+from ame.mem.mimic_engine import MimicEngine
 from ame.llm_caller.caller import LLMCaller
 
 from app.core.config import get_settings
 from app.core.logger import get_logger
+from app.core.exceptions import ConfigurationError, StorageError, LLMError
 
 logger = get_logger(__name__)
 
@@ -26,24 +29,52 @@ class LifeService:
         """初始化生活服务"""
         settings = get_settings()
         
-        # 初始化 LLM Caller
-        self.llm_caller = LLMCaller(
-            api_key=settings.OPENAI_API_KEY,
-            base_url=settings.OPENAI_BASE_URL,
-            model=settings.OPENAI_MODEL
-        )
+        # 检查配置
+        if not settings.is_configured:
+            raise ConfigurationError(
+                message="Life service not configured",
+                detail="Please configure OpenAI API Key first"
+            )
         
-        # 初始化混合存储仓库
-        self.repository = HybridRepository(
-            faiss_index_path=str(settings.DATA_DIR / "faiss" / "life.index"),
-            metadata_db_path=str(settings.DATA_DIR / "metadata" / "life.db"),
-            graph_db_path=str(settings.DATA_DIR / "falkor" / "life.db")
-        )
+        try:
+            # 初始化 LLM Caller
+            self.llm_caller = LLMCaller(
+                api_key=settings.OPENAI_API_KEY,
+                base_url=settings.OPENAI_BASE_URL,
+                model=settings.OPENAI_MODEL
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize LLM caller: {e}")
+            raise LLMError(
+                message="Failed to initialize LLM service",
+                detail=str(e)
+            )
+        
+        try:
+            # 初始化混合存储仓库
+            self.repository = HybridRepository(
+                faiss_index_path=str(settings.DATA_DIR / "faiss" / "life.index"),
+                metadata_db_path=str(settings.DATA_DIR / "metadata" / "life.db"),
+                graph_db_path=str(settings.DATA_DIR / "falkor" / "life.db")
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize repository: {e}")
+            raise StorageError(
+                message="Failed to initialize storage",
+                detail=str(e)
+            )
         
         # 初始化分析引擎
         self.analyzer = AnalyzeEngine(
+            repository=self.repository,
+            llm_caller=self.llm_caller
+        )
+        
+        # 初始化生活引擎
+        self.life_engine = LifeEngine(
+            repository=self.repository,
             llm_caller=self.llm_caller,
-            repository=self.repository
+            analyze_engine=self.analyzer
         )
         
         logger.info("Life Service initialized")
@@ -69,12 +100,11 @@ class LifeService:
             if entry_time is None:
                 entry_time = datetime.now()
             
-            # 调用 LLM 分析心情
-            prompt = self._build_mood_analysis_prompt(mood_entry)
-            
-            response = await self.llm_caller.call(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.7
+            # 使用 LifeEngine 分析心情
+            mood_analysis = await self.life_engine.analyze_mood(
+                mood_entry=mood_entry,
+                user_id="default",
+                entry_time=entry_time
             )
             
             # 存储心情记录
@@ -87,7 +117,11 @@ class LifeService:
                 retention_type=MemoryRetentionType.PERMANENT,
                 metadata={
                     "category": "mood",
-                    "analysis": response
+                    "emotion": {
+                        "type": mood_analysis.emotion_type,
+                        "intensity": mood_analysis.emotion_intensity
+                    },
+                    "analysis": mood_analysis.suggestions
                 }
             )
             
@@ -97,7 +131,11 @@ class LifeService:
             
             return {
                 "success": True,
-                "analysis": response,
+                "emotion_type": mood_analysis.emotion_type,
+                "emotion_intensity": mood_analysis.emotion_intensity,
+                "triggers": mood_analysis.triggers,
+                "trend": mood_analysis.trend.dict() if mood_analysis.trend else None,
+                "suggestions": mood_analysis.suggestions,
                 "document_id": doc.id,
                 "timestamp": entry_time.isoformat()
             }
@@ -122,35 +160,22 @@ class LifeService:
         logger.info(f"Tracking interests for past {period_days} days")
         
         try:
-            # 检索生活记录
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=period_days)
-            
-            life_records = await self._get_life_records(start_date, end_date)
-            
-            if not life_records:
-                return {
-                    "success": False,
-                    "message": "No life records found for the specified period"
-                }
-            
-            # 使用分析引擎提取兴趣
-            insights = await self.analyzer.extract_insights(
-                documents=life_records,
-                insight_type="interests"
+            # 使用 LifeEngine 追踪兴趣
+            interest_report = await self.life_engine.track_interests(
+                user_id="default",
+                period_days=period_days
             )
             
             logger.info("Interests tracked successfully")
             
             return {
                 "success": True,
-                "interests": insights,
-                "period": {
-                    "start": start_date.isoformat(),
-                    "end": end_date.isoformat(),
-                    "days": period_days
-                },
-                "records_count": len(life_records)
+                "top_interests": [t.dict() for t in interest_report.top_interests],
+                "new_interests": interest_report.new_interests,
+                "declining_interests": interest_report.declining_interests,
+                "recommendations": interest_report.recommendations,
+                "report": interest_report.report,
+                "period_days": period_days
             }
             
         except Exception as e:
@@ -237,30 +262,17 @@ class LifeService:
         logger.info("Getting life suggestions")
         
         try:
-            # 检索最近的生活记录
-            recent_records = await self._get_recent_life_records(limit=20)
-            
-            # 提取洞察
-            insights = await self.analyzer.extract_insights(
-                documents=recent_records,
-                insight_type="patterns"
-            )
-            
-            # 生成建议
-            prompt = self._build_suggestions_prompt(insights, context)
-            
-            suggestions = await self.llm_caller.call(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.8
+            # 使用 LifeEngine 生成建议
+            suggestions = await self.life_engine.generate_life_suggestions(
+                user_id="default",
+                context=context
             )
             
             logger.info("Life suggestions generated")
             
             return {
                 "success": True,
-                "suggestions": suggestions,
-                "based_on_records": len(recent_records),
-                "insights": insights
+                "suggestions": suggestions
             }
             
         except Exception as e:
@@ -329,22 +341,38 @@ class LifeService:
         start_date: datetime,
         end_date: datetime
     ) -> List[Document]:
-        """获取指定时间范围内的生活记录"""
-        # TODO: 实现基于时间范围的检索
-        # 目前简化处理，返回最近的生活记录
-        results = await self.repository.hybrid_search(
-            query="生活记录",
-            top_k=100
+        """
+        获取指定时间范围内的生活记录
+        
+        使用 HybridRepository 的时间范围检索功能
+        """
+        # 使用时间范围检索
+        docs = await self.repository.search_by_time_range(
+            start_date=start_date,
+            end_date=end_date,
+            doc_type=DocumentType.LIFE_RECORD,
+            limit=200
         )
-        return [r.document for r in results if r.document.doc_type == DocumentType.LIFE_RECORD]
+        
+        return docs
     
     async def _get_recent_life_records(self, limit: int = 20) -> List[Document]:
-        """获取最近的生活记录"""
-        results = await self.repository.hybrid_search(
-            query="生活记录",
-            top_k=limit
+        """
+        获取最近的生活记录
+        
+        使用最近 30 天的记录
+        """
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=30)
+        
+        docs = await self.repository.search_by_time_range(
+            start_date=start_date,
+            end_date=end_date,
+            doc_type=DocumentType.LIFE_RECORD,
+            limit=limit
         )
-        return [r.document for r in results if r.document.doc_type == DocumentType.LIFE_RECORD]
+        
+        return docs
     
     def _build_mood_analysis_prompt(self, mood_entry: str) -> str:
         """构建心情分析提示词"""

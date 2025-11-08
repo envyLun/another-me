@@ -10,10 +10,37 @@ from ame.models.domain import (
     DocumentStatus,
 )
 
+from ame.models.report_models import (
+    WeeklyReport,
+    DailyReport,
+    TaskSummary,
+    Achievement,
+    OrganizedTodos,
+    TaskInfo,
+    ProjectProgress,
+    MoodAnalysis,
+    EmotionResult,
+    MoodTrend,
+    InterestReport,
+    InterestTopic,
+)
+
 __all__ = [
     "Document",
     "DocumentType",
     "DataLayer",
     "MemoryRetentionType",
     "DocumentStatus",
+    "WeeklyReport",
+    "DailyReport",
+    "TaskSummary",
+    "Achievement",
+    "OrganizedTodos",
+    "TaskInfo",
+    "ProjectProgress",
+    "MoodAnalysis",
+    "EmotionResult",
+    "MoodTrend",
+    "InterestReport",
+    "InterestTopic",
 ]

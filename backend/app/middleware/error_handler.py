@@ -6,6 +6,7 @@ from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.core.logger import get_logger
+from app.core.exceptions import APIException
 from app.models.responses import ErrorResponse
 from datetime import datetime
 import traceback
@@ -38,6 +39,19 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             response.headers["X-Process-Time"] = str(process_time)
             
             return response
+            
+        except APIException as e:
+            # 自定义 API 异常
+            logger.warning(f"{e.__class__.__name__} on {request.url.path}: {e.message}")
+            error_response = ErrorResponse(
+                error=e.message,
+                detail=e.detail,
+                timestamp=datetime.now()
+            )
+            return JSONResponse(
+                status_code=e.status_code,
+                content=error_response.model_dump()
+            )
             
         except ValueError as e:
             # 参数错误

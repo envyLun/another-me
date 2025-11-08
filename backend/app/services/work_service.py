@@ -10,11 +10,14 @@ from pathlib import Path
 # 导入 ame 核心模块
 from ame.repository.hybrid_repository import HybridRepository
 from ame.models.domain import Document, DocumentType, MemoryRetentionType
+from ame.engines.work_engine import WorkEngine
 from ame.mem.analyze_engine import AnalyzeEngine
+from ame.mem.mimic_engine import MimicEngine
 from ame.llm_caller.caller import LLMCaller
 
 from app.core.config import get_settings
 from app.core.logger import get_logger
+from app.core.exceptions import ConfigurationError, StorageError, LLMError
 
 logger = get_logger(__name__)
 
@@ -26,24 +29,52 @@ class WorkService:
         """初始化工作服务"""
         settings = get_settings()
         
-        # 初始化 LLM Caller
-        self.llm_caller = LLMCaller(
-            api_key=settings.OPENAI_API_KEY,
-            base_url=settings.OPENAI_BASE_URL,
-            model=settings.OPENAI_MODEL
-        )
+        # 检查配置
+        if not settings.is_configured:
+            raise ConfigurationError(
+                message="Work service not configured",
+                detail="Please configure OpenAI API Key first"
+            )
         
-        # 初始化混合存储仓库
-        self.repository = HybridRepository(
-            faiss_index_path=str(settings.DATA_DIR / "faiss" / "work.index"),
-            metadata_db_path=str(settings.DATA_DIR / "metadata" / "work.db"),
-            graph_db_path=str(settings.DATA_DIR / "falkor" / "work.db")
-        )
+        try:
+            # 初始化 LLM Caller
+            self.llm_caller = LLMCaller(
+                api_key=settings.OPENAI_API_KEY,
+                base_url=settings.OPENAI_BASE_URL,
+                model=settings.OPENAI_MODEL
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize LLM caller: {e}")
+            raise LLMError(
+                message="Failed to initialize LLM service",
+                detail=str(e)
+            )
+        
+        try:
+            # 初始化混合存储仓库
+            self.repository = HybridRepository(
+                faiss_index_path=str(settings.DATA_DIR / "faiss" / "work.index"),
+                metadata_db_path=str(settings.DATA_DIR / "metadata" / "work.db"),
+                graph_db_path=str(settings.DATA_DIR / "falkor" / "work.db")
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize repository: {e}")
+            raise StorageError(
+                message="Failed to initialize storage",
+                detail=str(e)
+            )
         
         # 初始化分析引擎
         self.analyzer = AnalyzeEngine(
+            repository=self.repository,
+            llm_caller=self.llm_caller
+        )
+        
+        # 初始化工作引擎
+        self.work_engine = WorkEngine(
+            repository=self.repository,
             llm_caller=self.llm_caller,
-            repository=self.repository
+            analyze_engine=self.analyzer
         )
         
         logger.info("Work Service initialized")
@@ -72,39 +103,72 @@ class WorkService:
             if start_date is None:
                 start_date = end_date - timedelta(days=7)
             
-            # 检索工作记录
-            work_logs = await self._get_work_logs(start_date, end_date)
-            
-            if not work_logs:
-                return {
-                    "success": False,
-                    "message": "No work logs found for the specified period"
-                }
-            
-            # 使用分析引擎生成周报
-            report = await self.analyzer.generate_report(
-                documents=work_logs,
-                report_type="weekly",
-                context={
-                    "start_date": start_date.isoformat(),
-                    "end_date": end_date.isoformat()
-                }
+            # 使用 WorkEngine 生成周报
+            report_obj = await self.work_engine.generate_weekly_report(
+                user_id="default",
+                start_date=start_date,
+                end_date=end_date,
+                style="professional"
             )
             
             logger.info("Weekly report generated successfully")
             
             return {
                 "success": True,
-                "report": report,
+                "report": report_obj.content,
                 "period": {
                     "start": start_date.isoformat(),
                     "end": end_date.isoformat()
                 },
-                "logs_count": len(work_logs)
+                "key_tasks": [t.dict() for t in report_obj.key_tasks],
+                "achievements": [a.dict() for a in report_obj.achievements],
+                "statistics": report_obj.statistics
             }
             
         except Exception as e:
             logger.error(f"Failed to generate weekly report: {e}")
+            raise
+    
+    async def generate_daily_report(
+        self,
+        date: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """
+        生成工作日报
+        
+        Args:
+            date: 日期（默认今天）
+            
+        Returns:
+            日报内容
+        """
+        logger.info("Generating daily report")
+        
+        try:
+            # 计算日期范围
+            if date is None:
+                date = datetime.now()
+            
+            # 使用 WorkEngine 生成日报
+            report_obj = await self.work_engine.generate_daily_report(
+                user_id="default",
+                date=date,
+                style="professional"
+            )
+            
+            logger.info("Daily report generated successfully")
+            
+            return {
+                "success": True,
+                "report": report_obj.content,
+                "date": date.isoformat(),
+                "tasks_completed": [t.dict() for t in report_obj.tasks_completed],
+                "tasks_ongoing": [t.dict() for t in report_obj.tasks_ongoing],
+                "highlights": report_obj.highlights
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to generate daily report: {e}")
             raise
     
     async def organize_todos(
@@ -123,24 +187,24 @@ class WorkService:
         logger.info(f"Organizing {len(raw_todos)} todos")
         
         try:
-            # 构建提示词
-            prompt = self._build_todo_prompt(raw_todos)
-            
-            # 调用 LLM 整理
-            response = await self.llm_caller.call(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3
+            # 使用 WorkEngine 整理待办
+            organized = await self.work_engine.organize_todos(
+                raw_todos=raw_todos,
+                context={}
             )
-            
-            # 解析响应
-            organized = self._parse_todo_response(response)
             
             logger.info("Todos organized successfully")
             
             return {
                 "success": True,
-                "organized_todos": organized,
-                "original_count": len(raw_todos)
+                "organized_todos": {
+                    "high": [t.dict() for t in organized.high_priority],
+                    "medium": [t.dict() for t in organized.medium_priority],
+                    "low": [t.dict() for t in organized.low_priority],
+                    "formatted_text": organized.formatted_text
+                },
+                "original_count": organized.original_count,
+                "organized_count": organized.organized_count
             }
             
         except Exception as e:
@@ -215,35 +279,22 @@ class WorkService:
         logger.info(f"Tracking progress for project: {project_name}")
         
         try:
-            # 检索项目相关记录
-            results = await self.repository.hybrid_search(
-                query=f"项目 {project_name}",
-                top_k=20
-            )
-            
-            if not results:
-                return {
-                    "success": False,
-                    "message": f"No records found for project: {project_name}"
-                }
-            
-            # 提取文档
-            docs = [r.document for r in results]
-            
-            # 使用分析引擎生成进度报告
-            progress = await self.analyzer.generate_report(
-                documents=docs,
-                report_type="project_progress",
-                context={"project_name": project_name}
+            # 使用 WorkEngine 追踪项目进度
+            progress = await self.work_engine.track_project_progress(
+                project_name=project_name,
+                user_id="default"
             )
             
             logger.info("Project progress tracked successfully")
             
             return {
                 "success": True,
-                "project_name": project_name,
-                "progress": progress,
-                "records_count": len(docs)
+                "project_name": progress.project_name,
+                "completion_rate": progress.completion_rate,
+                "status": progress.status,
+                "timeline": progress.timeline,
+                "risks": progress.risks,
+                "report": progress.report
             }
             
         except Exception as e:
@@ -257,14 +308,20 @@ class WorkService:
         start_date: datetime,
         end_date: datetime
     ) -> List[Document]:
-        """获取指定时间范围内的工作记录"""
-        # TODO: 实现基于时间范围的检索
-        # 目前简化处理，返回最近的工作记录
-        results = await self.repository.hybrid_search(
-            query="工作日志",
-            top_k=50
+        """
+        获取指定时间范围内的工作记录
+        
+        使用 HybridRepository 的时间范围检索功能
+        """
+        # 使用时间范围检索
+        docs = await self.repository.search_by_time_range(
+            start_date=start_date,
+            end_date=end_date,
+            doc_type=DocumentType.WORK_LOG,
+            limit=100
         )
-        return [r.document for r in results if r.document.doc_type == DocumentType.WORK_LOG]
+        
+        return docs
     
     def _build_todo_prompt(self, raw_todos: List[str]) -> str:
         """构建待办整理提示词"""

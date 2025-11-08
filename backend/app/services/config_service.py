@@ -103,6 +103,15 @@ class ConfigService:
         """
         logger.info("Testing configuration")
         
+        result = {
+            "success": True,
+            "message": "Configuration is valid",
+            "model_available": False,
+            "embedding_available": False,
+            "embedding_dimension": None
+        }
+        
+        # 测试 LLM 模型
         try:
             from ame.llm_caller.caller import LLMCaller
             
@@ -119,22 +128,75 @@ class ConfigService:
             ]
             
             response = await llm_caller.generate(messages=messages)
-            
-            logger.info("Configuration test successful")
-            
-            return {
-                "success": True,
-                "message": "Configuration is valid",
-                "model_available": True
-            }
+            result["model_available"] = True
+            logger.info("LLM model test successful")
             
         except Exception as e:
-            logger.error(f"Configuration test failed: {e}")
-            return {
-                "success": False,
-                "message": f"Configuration test failed: {str(e)}",
-                "model_available": False
-            }
+            logger.error(f"LLM model test failed: {e}")
+            result["success"] = False
+            result["message"] = f"LLM model test failed: {str(e)}"
+            return result
+        
+        # 测试 Embedding 模型（如果配置了）
+        embedding_model = config.get('embedding_model')
+        embedding_dimension = config.get('embedding_dimension')
+        
+        if embedding_model and embedding_dimension:
+            try:
+                import openai
+                
+                # 创建 OpenAI 客户端
+                client = openai.OpenAI(
+                    api_key=config.get('api_key', ''),
+                    base_url=config.get('base_url', 'https://api.openai.com/v1')
+                )
+                
+                # 测试 Embedding 调用
+                response = client.embeddings.create(
+                    model=embedding_model,
+                    input="test embedding",
+                    encoding_format="float"
+                )
+                
+                # 检查返回的向量维度
+                actual_dimension = len(response.data[0].embedding)
+                result["embedding_available"] = True
+                result["embedding_dimension"] = actual_dimension
+                
+                # 检查维度是否匹配
+                if actual_dimension != embedding_dimension:
+                    logger.warning(
+                        f"Embedding dimension mismatch: expected {embedding_dimension}, got {actual_dimension}"
+                    )
+                    result["message"] = (
+                        f"✓ LLM model available\n"
+                        f"✓ Embedding model available\n"
+                        f"⚠ Warning: Configured dimension ({embedding_dimension}) "
+                        f"differs from actual ({actual_dimension})"
+                    )
+                else:
+                    result["message"] = (
+                        f"✓ LLM model available\n"
+                        f"✓ Embedding model available\n"
+                        f"✓ Embedding dimension correct ({actual_dimension})"
+                    )
+                
+                logger.info(f"Embedding test successful: {embedding_model}, dimension={actual_dimension}")
+                
+            except Exception as e:
+                logger.error(f"Embedding test failed: {e}")
+                result["embedding_available"] = False
+                result["message"] = (
+                    f"✓ LLM model available\n"
+                    f"✗ Embedding test failed: {str(e)}"
+                )
+                # Embedding 测试失败不影响整体成功
+        else:
+            # 没有配置 Embedding，只测试了 LLM
+            result["message"] = "✓ LLM model available (Embedding not configured)"
+        
+        logger.info("Configuration test completed")
+        return result
 
 
 # 全局服务实例

@@ -234,6 +234,166 @@ class HybridRepository:
         
         return search_results
     
+    async def search_by_time_range(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+        doc_type: Optional[str] = None,
+        limit: int = 100
+    ) -> List[Document]:
+        """
+        基于时间范围检索文档
+        
+        Args:
+            start_date: 开始时间
+            end_date: 结束时间
+            doc_type: 文档类型过滤（可选）
+            limit: 返回数量限制
+        
+        Returns:
+            documents: 文档列表（按时间降序）
+        """
+        # 从元数据库检索时间范围内的文档
+        docs = self.metadata.list(
+            doc_type=doc_type,
+            after=start_date,
+            before=end_date,
+            limit=limit
+        )
+        
+        return docs
+    
+    async def search_by_date(
+        self,
+        date: datetime,
+        doc_type: Optional[str] = None,
+        limit: int = 100
+    ) -> List[Document]:
+        """
+        检索指定日期的文档
+        
+        Args:
+            date: 目标日期
+            doc_type: 文档类型过滤（可选）
+            limit: 返回数量限制
+        
+        Returns:
+            documents: 文档列表
+        """
+        # 计算当日的开始和结束时间
+        start_date = date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        
+        return await self.search_by_time_range(
+            start_date=start_date,
+            end_date=end_date,
+            doc_type=doc_type,
+            limit=limit
+        )
+    
+    async def vector_search(
+        self,
+        query: str,
+        query_embedding: Optional[List[float]] = None,
+        top_k: int = 10,
+        filters: Optional[Dict] = None
+    ) -> List[SearchResult]:
+        """
+        纯向量检索（仅使用 Faiss）
+        
+        用于需要快速向量相似度搜索的场景，不涉及图谱检索
+        
+        Args:
+            query: 查询文本
+            query_embedding: 查询向量（可选）
+            top_k: 返回前 K 个结果
+            filters: 过滤条件
+        
+        Returns:
+            results: 检索结果列表
+        """
+        # 生成查询向量
+        if not query_embedding and self.embedding_fn:
+            query_embedding = await self.embedding_fn(query)
+        
+        if not query_embedding:
+            return []
+        
+        # Faiss 向量检索
+        faiss_results = await self.faiss.search(query_embedding, top_k)
+        
+        # 获取完整文档
+        doc_ids = [r["doc_id"] for r in faiss_results]
+        docs = await self.get_by_ids(doc_ids)
+        doc_map = {doc.id: doc for doc in docs}
+        
+        # 构建搜索结果
+        search_results = []
+        for r in faiss_results:
+            doc = doc_map.get(r["doc_id"])
+            if doc:
+                # 应用过滤器
+                if filters and not self._match_filters(doc, filters):
+                    continue
+                    
+                search_results.append(SearchResult(
+                    doc_id=doc.id,
+                    content=doc.content,
+                    score=r["score"],
+                    source="faiss",
+                    metadata=doc.metadata,
+                    entities=doc.entities
+                ))
+        
+        return search_results[:top_k]
+    
+    async def graph_search(
+        self,
+        query: str,
+        top_k: int = 10
+    ) -> List[SearchResult]:
+        """
+        纯图谱检索（仅使用 Falkor）
+        
+        用于需要利用知识图谱关系的场景
+        
+        Args:
+            query: 查询文本
+            top_k: 返回前 K 个结果
+        
+        Returns:
+            results: 检索结果列表
+        """
+        # 提取查询中的实体
+        entities = await self._extract_entities(query)
+        
+        if not entities:
+            return []
+        
+        # 图谱检索
+        graph_results = await self.graph.search_by_entities(query, entities, top_k)
+        
+        # 获取完整文档
+        doc_ids = [r["doc_id"] for r in graph_results]
+        docs = await self.get_by_ids(doc_ids)
+        doc_map = {doc.id: doc for doc in docs}
+        
+        # 构建搜索结果
+        search_results = []
+        for r in graph_results:
+            doc = doc_map.get(r["doc_id"])
+            if doc:
+                search_results.append(SearchResult(
+                    doc_id=doc.id,
+                    content=doc.content,
+                    score=r["score"],
+                    source="graph",
+                    metadata=doc.metadata,
+                    entities=doc.entities
+                ))
+        
+        return search_results
+    
     async def lifecycle_management(self):
         """
         数据生命周期管理（热→温→冷）
@@ -431,9 +591,79 @@ class HybridRepository:
         results: List[Dict],
         filters: Dict[str, Any]
     ) -> List[Dict]:
-        """应用过滤条件"""
-        # TODO: 实现基于元数据的过滤
-        return results
+        """
+        应用过滤条件到搜索结果
+        
+        支持的过滤器:
+        - doc_type: 文档类型
+        - source: 数据源
+        - after: 时间范围（开始）
+        - before: 时间范围（结束）
+        """
+        if not filters:
+            return results
+        
+        # 获取文档ID列表
+        doc_ids = [r["doc_id"] for r in results]
+        if not doc_ids:
+            return []
+        
+        # 从元数据库获取文档以应用过滤
+        docs = self.metadata.get_by_ids(doc_ids)
+        doc_map = {doc.id: doc for doc in docs}
+        
+        # 过滤结果
+        filtered = []
+        for r in results:
+            doc = doc_map.get(r["doc_id"])
+            if doc and self._match_filters(doc, filters):
+                filtered.append(r)
+        
+        return filtered
+    
+    def _match_filters(self, doc: Document, filters: Dict[str, Any]) -> bool:
+        """
+        检查文档是否匹配过滤条件
+        
+        Args:
+            doc: 文档对象
+            filters: 过滤条件字典
+        
+        Returns:
+            bool: 是否匹配
+        """
+        # 文档类型过滤
+        if "doc_type" in filters:
+            if doc.doc_type != filters["doc_type"]:
+                return False
+        
+        # 数据源过滤
+        if "source" in filters:
+            if not doc.source or filters["source"] not in doc.source:
+                return False
+        
+        # 时间范围过滤
+        if "after" in filters:
+            after = filters["after"]
+            if not doc.timestamp or doc.timestamp < after:
+                return False
+        
+        if "before" in filters:
+            before = filters["before"]
+            if not doc.timestamp or doc.timestamp > before:
+                return False
+        
+        # 状态过滤
+        if "status" in filters:
+            if doc.status != filters["status"]:
+                return False
+        
+        # 重要性过滤
+        if "min_importance" in filters:
+            if doc.importance < filters["min_importance"]:
+                return False
+        
+        return True
     
     def get_stats(self) -> Dict[str, Any]:
         """获取存储统计信息"""

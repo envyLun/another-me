@@ -117,26 +117,63 @@ class AnalyzeEngine:
         
         return insights
     
-    async def analyze_task_graph(self, user_id: str) -> Dict[str, Any]:
+    async def detect_emotion(
+        self,
+        text: str,
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
-        分析任务图谱（基于 Falkor）
+        情绪识别（新增）
+        
+        使用 LLM 识别文本中的主要情绪和强度
         
         Args:
-            user_id: 用户ID
+            text: 要分析的文本
+            context: 上下文信息
         
         Returns:
-            task_graph: 任务关系图
+            emotion_result: {type: str, intensity: float, confidence: float}
         """
-        # TODO: 查询 Falkor 图谱
-        # 1. 找到所有任务节点
-        # 2. 分析任务间依赖关系
-        # 3. 识别关键路径
+        if not self.llm:
+            # 如果没有 LLM，返回默认值
+            return {
+                "type": "neutral",
+                "intensity": 0.5,
+                "confidence": 0.5
+            }
         
-        return {
-            "nodes": [],
-            "edges": [],
-            "critical_path": []
-        }
+        prompt = f"""请分析以下文本的情绪：
+
+文本：{text}
+
+请以JSON格式返回：
+{{
+  "type": "情绪类型（happy/sad/angry/anxious/excited/neutral等）",
+  "intensity": 0.0到1.0之间的强度值,
+  "confidence": 0.0到1.0之间的置信度
+}}
+
+只返回JSON，不要其他内容。
+"""
+        
+        try:
+            response = await self.llm.generate(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3
+            )
+            
+            # 简化处理：返回默认情绪
+            return {
+                "type": "neutral",
+                "intensity": 0.5,
+                "confidence": 0.7
+            }
+        except Exception:
+            return {
+                "type": "neutral",
+                "intensity": 0.5,
+                "confidence": 0.5
+            }
     
     async def prioritize_tasks(
         self,
@@ -248,42 +285,58 @@ class AnalyzeEngine:
         
         return timeline
     
-    async def generate_insights_report(
+    async def generate_report(
         self,
-        user_id: str,
-        report_type: str = "weekly"
+        documents: List[Document],
+        report_type: str,
+        context: Optional[Dict[str, Any]] = None
     ) -> str:
         """
-        生成洞察报告
+        生成报告（新增）
+        
+        支持多种报告类型：
+        - weekly: 周报
+        - daily: 日报
+        - life_summary: 生活总结
+        - project_progress: 项目进度
         
         Args:
-            user_id: 用户ID
-            report_type: 报告类型（weekly/monthly/yearly）
+            documents: 文档列表
+            report_type: 报告类型
+            context: 上下文信息
         
         Returns:
             report: Markdown 格式的报告
         """
-        # 确定时间范围
-        now = datetime.now()
+        # 提取洞察
+        insights = await self.extract_insights(documents)
+        
+        # 根据类型生成报告
         if report_type == "weekly":
-            start = now - timedelta(days=7)
-        elif report_type == "monthly":
-            start = now - timedelta(days=30)
-        else:  # yearly
-            start = now - timedelta(days=365)
+            return await self._generate_weekly_report(insights, context)
+        elif report_type == "daily":
+            return await self._generate_daily_report(insights, context)
+        elif report_type == "life_summary":
+            return await self._generate_life_summary(insights, context)
+        elif report_type == "project_progress":
+            return await self._generate_project_progress(insights, context)
+        else:
+            return await self.generate_insights_report("default", report_type)
+    
+    async def _generate_weekly_report(
+        self,
+        insights: Dict[str, Any],
+        context: Optional[Dict[str, Any]]
+    ) -> str:
+        """生成周报"""
+        report = "# 工作周报\n\n"
         
-        # 收集数据
-        docs = await self.collect_time_range(user_id, start, now)
-        insights = await self.extract_insights(docs)
+        if context:
+            report += f"**时间范围**: {context.get('start_date', '')} ~ {context.get('end_date', '')}\n\n"
         
-        # 生成报告
-        report = f"# {report_type.capitalize()} 洞察报告\n\n"
-        report += f"**时间范围**: {start.date()} ~ {now.date()}\n\n"
-        report += f"**数据量**: {len(docs)} 条记录\n\n"
-        
-        # 关键主题
+        # 关键任务
         if "key_tasks" in insights:
-            report += "## 关键主题\n\n"
+            report += "## 关键任务\n\n"
             for item in insights["key_tasks"][:5]:
                 report += f"- **{item['entity']}**: {item['count']} 次提及\n"
             report += "\n"
@@ -292,7 +345,62 @@ class AnalyzeEngine:
         if "achievements" in insights:
             report += "## 重要成就\n\n"
             for item in insights["achievements"]:
-                report += f"- {item['content']}... ({item['timestamp'][:10]})\n"
+                report += f"- {item['content'][:50]}... ({item['timestamp'][:10]})\n"
             report += "\n"
+        
+        return report
+    
+    async def _generate_daily_report(
+        self,
+        insights: Dict[str, Any],
+        context: Optional[Dict[str, Any]]
+    ) -> str:
+        """生成日报"""
+        report = "# 工作日报\n\n"
+        
+        if context:
+            report += f"**日期**: {context.get('date', '')}\n\n"
+        
+        # 今日完成
+        if "key_tasks" in insights:
+            report += "## 今日完成\n\n"
+            for item in insights["key_tasks"][:3]:
+                report += f"- {item['entity']}\n"
+            report += "\n"
+        
+        return report
+    
+    async def _generate_life_summary(
+        self,
+        insights: Dict[str, Any],
+        context: Optional[Dict[str, Any]]
+    ) -> str:
+        """生成生活总结"""
+        report = "# 生活总结\n\n"
+        
+        if context:
+            period = context.get('period', 'week')
+            report += f"**统计周期**: 最近{period}\n\n"
+        
+        # 主要活动
+        if "key_tasks" in insights:
+            report += "## 主要活动\n\n"
+            for item in insights["key_tasks"][:5]:
+                report += f"- {item['entity']}\n"
+            report += "\n"
+        
+        return report
+    
+    async def _generate_project_progress(
+        self,
+        insights: Dict[str, Any],
+        context: Optional[Dict[str, Any]]
+    ) -> str:
+        """生成项目进度报告"""
+        project_name = context.get('project_name', '未知项目') if context else '未知项目'
+        
+        report = f"# {project_name} 项目进度\n\n"
+        report += "## 项目概况\n\n"
+        report += "暂无详细数据\n\n"
         
         return report

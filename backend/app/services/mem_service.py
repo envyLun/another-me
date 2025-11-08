@@ -15,6 +15,7 @@ from ame.mem.mimic_engine import MimicEngine
 from ame.llm_caller.caller import LLMCaller
 from app.core.config import get_settings
 from app.core.logger import get_logger
+from app.core.exceptions import ConfigurationError, LLMError
 from app.models.responses import Memory
 
 logger = get_logger(__name__)
@@ -33,14 +34,21 @@ class MEMService:
             self.engine = None
             return
         
-        # 初始化 LLM Caller
         try:
+            # 初始化 LLM Caller
             llm_caller = LLMCaller(
                 api_key=settings.OPENAI_API_KEY,
                 base_url=settings.OPENAI_BASE_URL,
                 model=settings.OPENAI_MODEL
             )
-            
+        except Exception as e:
+            logger.error(f"Failed to initialize LLM caller: {e}")
+            raise LLMError(
+                message="Failed to initialize LLM service",
+                detail=str(e)
+            )
+        
+        try:
             # 初始化模仿引擎
             self.engine = MimicEngine(
                 llm_caller=llm_caller,
@@ -58,7 +66,10 @@ class MEMService:
     def _check_engine(self):
         """检查引擎是否初始化"""
         if self.engine is None:
-            raise RuntimeError("MEM engine not initialized. Please configure API key first.")
+            raise ConfigurationError(
+                message="MEM engine not initialized",
+                detail="Please configure API key first"
+            )
     
     async def chat_stream(
         self,

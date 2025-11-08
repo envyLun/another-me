@@ -27,6 +27,37 @@ from .retrieval.vector_retriever import VectorRetriever
 from .retrieval.hybrid_retriever import HybridRetriever
 from .retrieval.reranker import Reranker, LLMReranker, RerankerBase
 
+# 导出引擎层
+from .engines.work_engine import WorkEngine
+from .engines.life_engine import LifeEngine
+from .mem.mimic_engine import MimicEngine
+from .mem.analyze_engine import AnalyzeEngine
+
+# 导出模型
+from .models.domain import (
+    Document,
+    DocumentType,
+    DataLayer,
+    MemoryRetentionType,
+    DocumentStatus,
+    SearchResult,
+)
+
+from .models.report_models import (
+    WeeklyReport,
+    DailyReport,
+    TaskSummary,
+    Achievement,
+    OrganizedTodos,
+    TaskInfo,
+    ProjectProgress,
+    MoodAnalysis,
+    EmotionResult,
+    MoodTrend,
+    InterestReport,
+    InterestTopic,
+)
+
 __all__ = [
     # Data Processor
     "DataProcessor",
@@ -57,4 +88,31 @@ __all__ = [
     "Reranker",
     "LLMReranker",
     "RerankerBase",
+    
+    # 场景引擎
+    "WorkEngine",
+    "LifeEngine",
+    # 核心引擎
+    "MimicEngine",
+    "AnalyzeEngine",
+    # 域模型
+    "Document",
+    "DocumentType",
+    "DataLayer",
+    "MemoryRetentionType",
+    "DocumentStatus",
+    "SearchResult",
+    # 报告模型
+    "WeeklyReport",
+    "DailyReport",
+    "TaskSummary",
+    "Achievement",
+    "OrganizedTodos",
+    "TaskInfo",
+    "ProjectProgress",
+    "MoodAnalysis",
+    "EmotionResult",
+    "MoodTrend",
+    "InterestReport",
+    "InterestTopic",
 ]

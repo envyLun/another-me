@@ -9,39 +9,27 @@ from datetime import datetime
 
 from app.services.work_service import get_work_service, WorkService
 from app.core.logger import get_logger
+from app.models.requests import (
+    WeeklyReportRequest,
+    DailyReportRequest,
+    OrganizeTodosRequest,
+    MeetingSummaryRequest,
+    ProjectProgressRequest
+)
+from app.models.responses import (
+    WeeklyReportResponse,
+    DailyReportResponse,
+    OrganizeTodosResponse,
+    MeetingSummaryResponse,
+    ProjectProgressResponse
+)
 
 logger = get_logger(__name__)
 
 router = APIRouter()
 
 
-# ==================== 请求模型 ====================
-
-class WeeklyReportRequest(BaseModel):
-    """周报生成请求"""
-    start_date: Optional[str] = Field(None, description="开始日期 YYYY-MM-DD")
-    end_date: Optional[str] = Field(None, description="结束日期 YYYY-MM-DD")
-
-
-class OrganizeTodosRequest(BaseModel):
-    """待办整理请求"""
-    todos: List[str] = Field(..., description="原始待办事项列表")
-
-
-class MeetingSummaryRequest(BaseModel):
-    """会议总结请求"""
-    meeting_notes: str = Field(..., description="会议记录内容")
-    meeting_info: Optional[dict] = Field(None, description="会议信息（标题、时间、参与者等）")
-
-
-class ProjectProgressRequest(BaseModel):
-    """项目进度请求"""
-    project_name: str = Field(..., description="项目名称")
-
-
-# ==================== API 端点 ====================
-
-@router.post("/weekly-report")
+@router.post("/weekly-report", response_model=WeeklyReportResponse)
 async def generate_weekly_report(
     request: WeeklyReportRequest,
     service: WorkService = Depends(get_work_service)
@@ -65,14 +53,41 @@ async def generate_weekly_report(
             end_date=end_date
         )
         
-        return result
+        return WeeklyReportResponse(**result)
         
     except Exception as e:
         logger.error(f"Failed to generate weekly report: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/organize-todos")
+@router.post("/daily-report", response_model=DailyReportResponse)
+async def generate_daily_report(
+    request: DailyReportRequest,
+    service: WorkService = Depends(get_work_service)
+):
+    """
+    生成工作日报
+    
+    根据指定日期的工作记录，自动生成日报内容。
+    如果不指定日期，则生成今天的日报。
+    """
+    logger.info(f"API: Generate daily report request")
+    
+    try:
+        # 解析日期
+        date = datetime.fromisoformat(request.date) if request.date else None
+        
+        # 调用服务
+        result = await service.generate_daily_report(date=date)
+        
+        return DailyReportResponse(**result)
+        
+    except Exception as e:
+        logger.error(f"Failed to generate daily report: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/organize-todos", response_model=OrganizeTodosResponse)
 async def organize_todos(
     request: OrganizeTodosRequest,
     service: WorkService = Depends(get_work_service)
@@ -89,14 +104,14 @@ async def organize_todos(
             raw_todos=request.todos
         )
         
-        return result
+        return OrganizeTodosResponse(**result)
         
     except Exception as e:
         logger.error(f"Failed to organize todos: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/summarize-meeting")
+@router.post("/summarize-meeting", response_model=MeetingSummaryResponse)
 async def summarize_meeting(
     request: MeetingSummaryRequest,
     service: WorkService = Depends(get_work_service)
@@ -114,14 +129,14 @@ async def summarize_meeting(
             meeting_info=request.meeting_info
         )
         
-        return result
+        return MeetingSummaryResponse(**result)
         
     except Exception as e:
         logger.error(f"Failed to summarize meeting: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/track-project")
+@router.post("/track-project", response_model=ProjectProgressResponse)
 async def track_project_progress(
     request: ProjectProgressRequest,
     service: WorkService = Depends(get_work_service)
@@ -138,7 +153,7 @@ async def track_project_progress(
             project_name=request.project_name
         )
         
-        return result
+        return ProjectProgressResponse(**result)
         
     except Exception as e:
         logger.error(f"Failed to track project progress: {e}")
