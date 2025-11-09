@@ -5,7 +5,7 @@ AME - Another Me Engine
 架构：Foundation (基础能力层) → Capabilities (能力模块层) → Services (业务服务层)
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 __author__ = "Another Me Team"
 
 # ========== Foundation Layer (基础能力层) ==========
@@ -52,6 +52,12 @@ from .foundation.nlp.ner import (
 )
 
 # ========== Capabilities Layer (能力模块层) ==========
+# Factory (推荐使用)
+from .capabilities import (
+    CapabilityFactory,
+    CapabilityType,
+)
+
 # Memory - 记忆管理
 from .capabilities.memory import (
     MemoryBase,
@@ -84,6 +90,7 @@ from .capabilities.analysis import (
 # Generation - RAG 生成
 from .capabilities.generation import (
     RAGGenerator,
+    StyleGenerator,
 )
 
 # ========== Services Layer (业务服务层) ==========
@@ -98,28 +105,25 @@ from .services.knowledge import (
     DocumentService,
 )
 
-# ========== 旧模块（兼容性，将逐步废弃）==========
+# Work Services
+from .services.work import (
+    ReportService,
+    TodoService,
+    MeetingService,
+    ProjectService,
+)
+
+# Life Services
+from .services.life import (
+    MoodService,
+    InterestService,
+    MemoryService,
+)
+
+# ========== 旧模块（已删除，保留兼容性导入）==========
 from .data_processor.processor import DataProcessor
 from .data_processor.base import DataProcessorBase, ProcessedData
 from .data_processor.document_processor import DocumentProcessor
-
-# Storage (旧模块，使用 foundation.storage 替代)
-from .storage.falkor_store import FalkorStore
-from .storage.metadata_store import MetadataStore
-
-# 旧的 RAG (使用 capabilities.generation.RAGGenerator 替代)
-
-from .retrieval.factory import RetrieverFactory
-from .retrieval.base import RetrieverBase, RetrievalResult
-from .retrieval.vector_retriever import VectorRetriever
-from .retrieval.pipeline import RetrievalPipeline
-from .retrieval.reranker import Reranker, LLMReranker, RerankerBase
-
-# 导出引擎层 (待 Phase 3 重构)
-# from .engines.work_engine import WorkEngine
-# from .engines.life_engine import LifeEngine
-# from .mem.mimic_engine import MimicEngine
-# from .mem.analyze_engine import AnalyzeEngine
 
 # 导出模型
 from .models.domain import (
@@ -182,6 +186,10 @@ __all__ = [
     "Entity",
     
     # ========== Capabilities Layer ==========
+    # Factory (推荐使用)
+    "CapabilityFactory",
+    "CapabilityType",
+    
     # Memory
     "MemoryBase",
     "MemoryItem",
@@ -205,6 +213,7 @@ __all__ = [
     
     # Generation
     "RAGGenerator",
+    "StyleGenerator",
     
     # ========== Services Layer ==========
     # Conversation
@@ -214,6 +223,17 @@ __all__ = [
     "SearchService",
     "DocumentService",
     
+    # Work
+    "ReportService",
+    "TodoService",
+    "MeetingService",
+    "ProjectService",
+    
+    # Life
+    "MoodService",
+    "InterestService",
+    "MemoryService",
+    
     # ========== 旧模块（兼容性） ==========
     # Data Processor (旧模块)
     "DataProcessor",
@@ -221,27 +241,7 @@ __all__ = [
     "ProcessedData",
     "DocumentProcessor",
     
-    # Storage (旧模块，使用 foundation.storage 替代)
-    "FaissStore",
-    "FalkorStore",
-    "MetadataStore",
     
-    # Retrieval
-    "RetrieverFactory",
-    "RetrieverBase",
-    "RetrievalResult",
-    "VectorRetriever",
-    "RetrievalPipeline",
-    "Reranker",
-    "LLMReranker",
-    "RerankerBase",
-    
-    # 场景引擎 (待 Phase 3 重构)
-    # "WorkEngine",
-    # "LifeEngine",
-    # 核心引擎
-    # "MimicEngine",
-    # "AnalyzeEngine",
     # 域模型
     "Document",
     "DocumentType",

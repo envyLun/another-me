@@ -18,6 +18,7 @@ from .validators import (
     validate_text,
     validate_score,
 )
+from .text_processor import TextProcessor
 
 __all__ = [
     # Time utils
@@ -38,4 +39,7 @@ __all__ = [
     "validate_doc_id",
     "validate_text",
     "validate_score",
+    
+    # Text Processor
+    "TextProcessor",
 ]

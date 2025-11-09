@@ -21,10 +21,11 @@ from .conversation import MimicService
 # Knowledge Services
 from .knowledge import SearchService, DocumentService
 
-# TODO: 实现其他服务模块
-# from .work import ReportService, TodoService, MeetingService, ProjectService
-# from .life import MoodService, InterestService, MemoryService
-# from .knowledge import DocumentService, SearchService
+# Work Services
+from .work import ReportService, TodoService, MeetingService, ProjectService
+
+# Life Services
+from .life import MoodService, InterestService, MemoryService
 
 __all__ = [
     # Conversation
@@ -34,18 +35,14 @@ __all__ = [
     "SearchService",
     "DocumentService",
     
-    # TODO: Work
-    # "ReportService",
-    # "TodoService",
-    # "MeetingService",
-    # "ProjectService",
+    # Work
+    "ReportService",
+    "TodoService",
+    "MeetingService",
+    "ProjectService",
     
-    # TODO: Life
-    # "MoodService",
-    # "InterestService",
-    # "MemoryService",
-    
-    # TODO: Knowledge
-    # "DocumentService",
-    # "SearchService",
+    # Life
+    "MoodService",
+    "InterestService",
+    "MemoryService",
 ]

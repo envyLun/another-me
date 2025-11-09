@@ -1,6 +1,6 @@
 """
-统一数据处理模块
-负责:文件解析、文本清洗、格式标准化（支持同步和异步）
+文本处理工具 - Foundation Layer
+负责: 文件解析、文本清洗、格式标准化
 """
 
 import json
@@ -15,45 +15,33 @@ from concurrent.futures import ThreadPoolExecutor
 logger = logging.getLogger(__name__)
 
 
-class DataProcessor:
-    """统一数据处理器（支持同步和异步）"""
+class TextProcessor:
+    """文本处理器（支持同步和异步）"""
     
     def __init__(self, max_workers: int = 4):
-        """
-        Args:
-            max_workers: 并发处理的最大线程数
-        """
         self.supported_formats = ['.txt', '.json', '.md']
         self.max_workers = max_workers
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
     
     async def process_file(self, file_path: str) -> List[Dict]:
-        """
-        输入：文件路径
-        输出：标准化的文档列表
-        """
+        """处理文件"""
         extension = file_path.split('.')[-1].lower()
         
-        if extension == 'txt' or extension == 'md':
+        if extension in ['txt', 'md']:
             return await self._process_text_file(file_path)
         elif extension == 'json':
             return await self._process_json_file(file_path)
         else:
             raise ValueError(f"Unsupported file format: {extension}")
     
-    async def process_text(self, text: str, source: str, timestamp: Optional[str] = None) -> Dict[str, Any]:
-        """
-        处理文本内容
-        
-        Args:
-            text: 文本内容
-            source: 来源
-            timestamp: 时间戳（可选）
-            
-        Returns:
-            标准化的文档对象
-        """
-        cleaned_text = self._clean_text(text)
+    async def process_text(
+        self, 
+        text: str, 
+        source: str, 
+        timestamp: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """处理文本内容"""
+        cleaned_text = self.clean_text(text)
         
         return {
             "content": cleaned_text,
@@ -71,34 +59,28 @@ class DataProcessor:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
         except UnicodeDecodeError:
-            # 尝试其他编码
             logger.warning(f"UTF-8 decoding failed for {file_path}, trying GBK")
             with open(file_path, 'r', encoding='gbk') as f:
                 content = f.read()
         
-        # 按段落分割
-        paragraphs = self._split_into_paragraphs(content)
+        paragraphs = self.split_into_paragraphs(content)
         
         documents = []
         for para in paragraphs:
-            if len(para.strip()) > 10:  # 过滤太短的段落
-                doc = await self.process_text(
-                    text=para,
-                    source=file_path
-                )
+            if len(para.strip()) > 10:
+                doc = await self.process_text(text=para, source=file_path)
                 documents.append(doc)
         
         logger.info(f"Processed {len(documents)} paragraphs from {Path(file_path).name}")
         return documents
     
     async def _process_json_file(self, file_path: str) -> List[Dict[str, Any]]:
-        """处理 JSON 文件（如微信聊天记录导出）"""
+        """处理 JSON 文件"""
         with open(file_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
         documents = []
         
-        # 假设格式：[{"content": "...", "timestamp": "...", "sender": "..."}]
         if isinstance(data, list):
             for item in data:
                 if isinstance(item, dict) and item.get("content"):
@@ -112,44 +94,24 @@ class DataProcessor:
         logger.info(f"Processed {len(documents)} messages from {Path(file_path).name}")
         return documents
     
-    def _clean_text(self, text: str) -> str:
+    def clean_text(self, text: str) -> str:
         """文本清洗"""
-        # 去除多余空白
         text = re.sub(r'\s+', ' ', text)
-        # 去除特殊字符（保留基本标点）
         text = re.sub(r'[^\w\s\u4e00-\u9fff.,!?;:，。！？；：""''、]', '', text)
         return text.strip()
     
-    def _split_into_paragraphs(self, text: str) -> List[str]:
+    def split_into_paragraphs(self, text: str) -> List[str]:
         """分割段落"""
-        # 按换行符分割
         paragraphs = re.split(r'\n\s*\n', text)
         return [p.strip() for p in paragraphs if p.strip()]
     
-    # ==================== 批量处理方法（异步） ====================
-    
     async def process_files_concurrent(self, file_paths: List[str]) -> List[Dict]:
-        """
-        并发处理多个文件
-        
-        Args:
-            file_paths: 文件路径列表
-            
-        Returns:
-            处理结果列表
-        """
+        """并发处理多个文件"""
         logger.info(f"Starting concurrent processing of {len(file_paths)} files")
         
-        # 创建任务
-        tasks = [
-            self._process_file_async(file_path)
-            for file_path in file_paths
-        ]
-        
-        # 并发执行
+        tasks = [self._process_file_async(file_path) for file_path in file_paths]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
-        # 过滤错误
         valid_results = []
         for i, result in enumerate(results):
             if isinstance(result, Exception):
@@ -158,7 +120,6 @@ class DataProcessor:
                 valid_results.extend(result)
         
         logger.info(f"Completed processing: {len(valid_results)} documents")
-        
         return valid_results
     
     async def _process_file_async(self, file_path: str) -> List[Dict]:
@@ -171,49 +132,13 @@ class DataProcessor:
         )
     
     def _process_file_sync(self, file_path: str) -> List[Dict]:
-        """同步处理文件（在线程池中执行）"""
-        import asyncio
-        # 创建新的事件循环
+        """同步处理文件"""
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
             return loop.run_until_complete(self.process_file(file_path))
         finally:
             loop.close()
-    
-    async def process_texts_concurrent(self, texts: List[Dict]) -> List[Dict]:
-        """
-        并发处理多个文本
-        
-        Args:
-            texts: 文本列表 [{"text": "...", "source": "...", "timestamp": "..."}]
-            
-        Returns:
-            处理结果列表
-        """
-        logger.info(f"Starting concurrent processing of {len(texts)} texts")
-        
-        tasks = [
-            self.process_text(
-                text=item["text"],
-                source=item.get("source", "unknown"),
-                timestamp=item.get("timestamp")
-            )
-            for item in texts
-        ]
-        
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        valid_results = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                logger.error(f"Error processing text {i}: {str(result)}")
-            else:
-                valid_results.append(result)
-        
-        logger.info(f"Completed processing: {len(valid_results)} documents")
-        
-        return valid_results
     
     def __del__(self):
         """清理资源"""
