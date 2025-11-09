@@ -5,7 +5,7 @@ RAG 生成模块
 
 from typing import List, Dict, Optional, AsyncIterator
 import logging
-from ame.llm_caller.caller import LLMCaller
+from ame.foundation.llm import LLMCallerBase
 from ame.rag.knowledge_base import KnowledgeBase
 
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ class RAGGenerator:
     def __init__(
         self, 
         knowledge_base: KnowledgeBase,
-        llm_caller: LLMCaller,
+        llm_caller: LLMCallerBase,
         default_top_k: int = 5,
         max_context_length: int = 3000
     ):

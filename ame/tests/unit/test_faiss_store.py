@@ -3,7 +3,7 @@ Unit tests for FaissStore
 """
 import pytest
 import numpy as np
-from ame.storage.faiss_store import FaissStore
+from ame.foundation.storage import VectorStore
 
 
 @pytest.mark.unit

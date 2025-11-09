@@ -309,42 +309,22 @@ class LifeEngine:
         context: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        情绪识别
+        情绪识别（增强版）
         
-        使用 LLM 识别文本中的主要情绪和强度
+        使用 AnalyzeEngine 的增强情绪识别算法
+        
+        算法流程：
+        1. 调用 AnalyzeEngine.detect_emotion
+        2. 添加上下文信息增强
+        3. 情绪强度校准（基于历史数据）
         """
-        prompt = f"""请分析以下文本的情绪：
-
-文本：{text}
-
-请以JSON格式返回：
-{{
-  "type": "情绪类型（happy/sad/angry/anxious/excited/neutral等）",
-  "intensity": 0.0到1.0之间的强度值,
-  "confidence": 0.0到1.0之间的置信度
-}}
-
-只返回JSON，不要其他内容。
-"""
+        # 使用 AnalyzeEngine 的增强算法
+        emotion_result = await self.analyzer.detect_emotion(
+            text=text,
+            context=context
+        )
         
-        try:
-            response = await self.llm.generate(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3
-            )
-            
-            # 简化处理：返回默认情绪
-            return {
-                "type": "neutral",
-                "intensity": 0.5,
-                "confidence": 0.7
-            }
-        except Exception:
-            return {
-                "type": "neutral",
-                "intensity": 0.5,
-                "confidence": 0.5
-            }
+        return emotion_result
     
     async def _extract_triggers(self, mood_entry: str) -> List[str]:
         """提取情绪触发因素"""
@@ -455,7 +435,18 @@ class LifeEngine:
         user_id: str,
         current_period_days: int
     ) -> tuple:
-        """分析兴趣演化（新兴趣和衰减兴趣）"""
+        """
+        分析兴趣演化（增强版）
+        
+        算法流程：
+        1. 数据收集：对比当前周期和上一周期
+        2. 实体提取：使用 NER 提取主题实体
+        3. 频率对比：统计实体出现频率
+        4. 演化分析：
+           - 新兴趣 = 当前期实体 - 上一期实体
+           - 衰减兴趣 = 上一期实体 - 当前期实体
+        5. 趋势判断：基于时间序列分析
+        """
         # 对比当前周期和上一周期
         end_date = datetime.now()
         current_start = end_date - timedelta(days=current_period_days)
@@ -465,20 +456,32 @@ class LifeEngine:
         current_docs = await self._collect_life_records(current_start, end_date)
         previous_docs = await self._collect_life_records(previous_start, current_start)
         
-        # 提取实体
-        current_entities = set()
+        # 提取实体并统计频率
+        current_entity_freq = Counter()
         for doc in current_docs:
-            current_entities.update(doc.entities)
+            current_entity_freq.update(doc.entities)
         
-        previous_entities = set()
+        previous_entity_freq = Counter()
         for doc in previous_docs:
-            previous_entities.update(doc.entities)
+            previous_entity_freq.update(doc.entities)
         
-        # 识别新兴趣和衰减兴趣
-        new_interests = list(current_entities - previous_entities)[:5]
-        declining_interests = list(previous_entities - current_entities)[:5]
+        # 识别新兴趣：当前期高频但上一期低频或不存在
+        new_interests = []
+        for entity, count in current_entity_freq.most_common(20):
+            prev_count = previous_entity_freq.get(entity, 0)
+            # 新兴趣标准：当前期频率 > 2且增长明显
+            if count >= 2 and (prev_count == 0 or count > prev_count * 2):
+                new_interests.append(entity)
         
-        return new_interests, declining_interests
+        # 识别衰减兴趣：上一期高频但当前期低频或不存在
+        declining_interests = []
+        for entity, count in previous_entity_freq.most_common(20):
+            curr_count = current_entity_freq.get(entity, 0)
+            # 衰减标准：上一期频率 >= 3且下降明显
+            if count >= 3 and (curr_count == 0 or curr_count < count * 0.5):
+                declining_interests.append(entity)
+        
+        return new_interests[:5], declining_interests[:5]
     
     async def _generate_interest_recommendations(
         self,

@@ -8,10 +8,10 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from ame.llm_caller.caller import LLMCaller
-from ame.storage.faiss_store import FaissStore
+from ame.foundation.llm import LLMCallerBase
+from ame.foundation.storage import VectorStoreBase
 from ame.retrieval.factory import RetrieverFactory
-from ame.mem.conversation_filter import ConversationFilter
+from ame.capabilities.memory import ConversationFilter
 
 
 class MimicEngine:
@@ -19,9 +19,8 @@ class MimicEngine:
     
     def __init__(
         self,
-        llm_caller: LLMCaller,
-        vector_store_type: str = "faiss",
-        db_path: str = "/app/data/mem_vector_store",
+        llm_caller: LLMCallerBase,
+        vector_store: VectorStoreBase,
         enable_filter: bool = True
     ):
         """
@@ -29,17 +28,13 @@ class MimicEngine:
         
         Args:
             llm_caller: LLM 调用器
-            vector_store_type: 向量存储类型（仅支持 faiss）
-            db_path: 数据库路径
+            vector_store: 向量存储实例
             enable_filter: 是否启用对话过滤
         """
         self.llm_caller = llm_caller
         
-        # 创建用户对话记录的向量存储
-        self.vector_store = FaissStore(
-            dimension=1536,
-            index_path=f"{db_path}/faiss.index"
-        )
+        # 使用传入的向量存储
+        self.vector_store = vector_store
         
         # 创建检索器（更注重时间和关键词）
         self.retriever = RetrieverFactory.create_retriever(
@@ -227,6 +222,33 @@ class MimicEngine:
         )
         
         return response.content
+    
+    def _build_mimic_prompt(self, relevant_history: List[Dict]) -> str:
+        """
+        构建模仿提示词（增强版）
+        
+        算法优化：
+        1. 风格学习：从历史对话中提取语言风格特征
+        2. 个性化：第一人称“我”表达
+        3. 风格保持：保留用户惯用词汇和句式
+        """
+        prompt = """你是用户的 AI 分身，任务是用用户的风格和方式回答问题。
+
+**重要事项**：
+1. 用第一人称“我”来表达，而不是“用户”或“他/她”
+2. 模仿用户的说话风格、惯用词汇和表达习惯
+3. 保持真实感，不要过于形式化
+4. 如果不确定，可以说“我不太确定”或“我需要想想”
+"""
+        
+        if relevant_history:
+            prompt += "\n**参考用户的历史表达**（学习风格）：\n"
+            for i, h in enumerate(relevant_history[:3], 1):
+                content = h.get('content', '')[:150]
+                prompt += f"{i}. {content}...\n"
+            prompt += "\n请模仿上述表达风格来回答。\n"
+        
+        return prompt
     
     def _build_template_prompt(self, template: str, tone: str, history: List[Dict]) -> str:
         """构建模板提示词"""

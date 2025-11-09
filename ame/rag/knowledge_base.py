@@ -11,7 +11,7 @@ import os
 # 添加父目录到路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from ame.storage.faiss_store import FaissStore
+from ame.foundation.storage import VectorStore as FaissStore
 from ame.data_processor.processor import DataProcessor
 from ame.retrieval.factory import RetrieverFactory
 

@@ -9,7 +9,7 @@ from typing import List, Dict
 from ame.retrieval.graph_retriever import GraphRetriever
 from ame.retrieval.base import RetrievalResult
 from ame.storage.falkor_store import FalkorStore
-from ame.ner.base import Entity, NERBase
+from ame.foundation.nlp.ner import Entity, NERBase
 
 
 class MockNER(NERBase):

@@ -9,9 +9,9 @@ from pathlib import Path
 import tempfile
 import shutil
 
-from ame.storage.faiss_store import FaissStore
-from ame.storage.metadata_store import MetadataStore
-from ame.storage.falkor_store import MockFalkorStore
+from ame.foundation.storage import VectorStore
+from ame.foundation.storage import MetadataStore
+from ame.foundation.storage import GraphStore
 from ame.repository.hybrid_repository import HybridRepository
 from ame.models.domain import Document, DocumentType, DataLayer, MemoryRetentionType
 

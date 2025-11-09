@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 from ame.retrieval import VectorRetriever, GraphRetriever, HybridRetriever
 from ame.retrieval.base import RetrievalResult
-from ame.storage.faiss_store import FaissStore
-from ame.ner.base import Entity
+from ame.foundation.storage import VectorStore
+from ame.foundation.nlp.ner import Entity
 
 
 class MockFaissStore:

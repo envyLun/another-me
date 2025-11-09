@@ -103,7 +103,7 @@ async def test_get_knowledge_base_statistics(tmp_data_dir):
 async def test_mimic_engine_basic(tmp_data_dir):
     """Test basic MimicEngine functionality"""
     from ame.mem.mimic_engine import MimicEngine
-    from ame.llm_caller.caller import LLMCaller
+    from ame.foundation.llm import OpenAICaller
     
     # Mock LLM caller
     class MockLLMCaller:

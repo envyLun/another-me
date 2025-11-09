@@ -5,10 +5,7 @@ NER 服务单元测试
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from ame.ner.base import Entity, NERBase
-from ame.ner.simple_ner import SimpleNER
-from ame.ner.llm_ner import LLMBasedNER
-from ame.ner.hybrid_ner import HybridNER
+from ame.foundation.nlp.ner import Entity, NERBase, SimpleNER, LLMNER, HybridNER
 
 
 class TestEntity:

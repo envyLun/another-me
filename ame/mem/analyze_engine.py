@@ -73,14 +73,22 @@ class AnalyzeEngine:
         metrics: List[str] = None
     ) -> Dict[str, Any]:
         """
-        提取关键洞察
+        提取关键洞察（增强版）
+        
+        支持指标：
+        1. key_tasks: 关键任务提取（实体频率统计）
+        2. achievements: 成就识别（importance > 0.7 的文档）
+        3. challenges: 挑战识别（情绪分析识别负面情绪记录）
+        4. time_stats: 时间统计（按时间分组统计）
+        5. trends: 趋势分析（时间序列对比）
+        6. highlights: 亮点提取（高重要性记录）
         
         Args:
             documents: 文档列表
-            metrics: 指标列表（key_tasks, achievements, challenges）
+            metrics: 指标列表
         
         Returns:
-            insights: 洞察结果
+            insights: 洞察结果字典
         """
         metrics = metrics or ["key_tasks", "achievements", "challenges"]
         
@@ -89,12 +97,22 @@ class AnalyzeEngine:
         # 提取实体频率（关键主题）
         if "key_tasks" in metrics:
             all_entities = []
+            entity_docs = {}  # 记录实体对应的文档
+            
             for doc in documents:
                 all_entities.extend(doc.entities)
+                for entity in doc.entities:
+                    if entity not in entity_docs:
+                        entity_docs[entity] = []
+                    entity_docs[entity].append(doc)
             
             entity_freq = Counter(all_entities)
             insights["key_tasks"] = [
-                {"entity": e, "count": c}
+                {
+                    "entity": e,
+                    "count": c,
+                    "content": entity_docs[e][0].content[:100] if entity_docs.get(e) else ""
+                }
                 for e, c in entity_freq.most_common(10)
             ]
         
@@ -109,11 +127,66 @@ class AnalyzeEngine:
                 for doc in documents
                 if doc.importance > 0.7
             ]
+            # 按重要性排序
+            achievements.sort(key=lambda x: x['importance'], reverse=True)
             insights["achievements"] = achievements[:5]
         
-        # 挑战识别（TODO: 使用 LLM 分析情感）
+        # 挑战识别（使用情绪分析）
         if "challenges" in metrics:
-            insights["challenges"] = []
+            challenges = []
+            for doc in documents:
+                if self.llm:
+                    # 检测负面情绪
+                    emotion = await self.detect_emotion(doc.content)
+                    if emotion['type'] in ['sad', 'angry', 'anxious', 'frustrated'] and emotion['intensity'] > 0.6:
+                        challenges.append(doc.content[:100])
+            insights["challenges"] = challenges[:5]
+        
+        # 时间统计
+        if "time_stats" in metrics:
+            time_groups = {}
+            for doc in documents:
+                date_key = doc.timestamp.strftime('%Y-%m-%d')
+                time_groups[date_key] = time_groups.get(date_key, 0) + 1
+            
+            insights["time_stats"] = {
+                "total_docs": len(documents),
+                "daily_distribution": time_groups,
+                "avg_per_day": len(documents) / max(len(time_groups), 1)
+            }
+        
+        # 亮点提取（高重要性 + 正面情绪）
+        if "highlights" in metrics:
+            highlights = [
+                doc.content[:100]
+                for doc in documents
+                if doc.importance > 0.6
+            ][:5]
+            insights["highlights"] = highlights
+        
+        # 趋势分析
+        if "trends" in metrics:
+            if len(documents) > 10:
+                # 对比前半部分和后半部分
+                mid = len(documents) // 2
+                first_half = documents[:mid]
+                second_half = documents[mid:]
+                
+                first_avg_importance = sum(d.importance for d in first_half) / len(first_half)
+                second_avg_importance = sum(d.importance for d in second_half) / len(second_half)
+                
+                if second_avg_importance > first_avg_importance + 0.1:
+                    trend = "improving"
+                elif second_avg_importance < first_avg_importance - 0.1:
+                    trend = "declining"
+                else:
+                    trend = "stable"
+                
+                insights["trends"] = {
+                    "direction": trend,
+                    "first_period_avg": first_avg_importance,
+                    "second_period_avg": second_avg_importance
+                }
         
         return insights
     
@@ -123,16 +196,26 @@ class AnalyzeEngine:
         context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        情绪识别（新增）
+        情绪识别（增强版）
         
         使用 LLM 识别文本中的主要情绪和强度
         
+        算法流程：
+        1. Prompt 构建：输入文本 + 上下文信息
+        2. LLM 分析（Temperature 0.3，保证稳定性）
+        3. 结果解析：JSON格式 {type, intensity, confidence}
+        4. 兜底策略：解析失败返回 neutral
+        
         Args:
             text: 要分析的文本
-            context: 上下文信息
+            context: 上下文信息（时间、场景等）
         
         Returns:
-            emotion_result: {type: str, intensity: float, confidence: float}
+            emotion_result: {
+                'type': str,        # 情绪类型（happy/sad/angry/anxious/excited/neutral等）
+                'intensity': float, # 情绪强度（0.0-1.0）
+                'confidence': float # 置信度（0.0-1.0）
+            }
         """
         if not self.llm:
             # 如果没有 LLM，返回默认值
@@ -142,13 +225,21 @@ class AnalyzeEngine:
                 "confidence": 0.5
             }
         
+        # 构建上下文信息
+        context_str = ""
+        if context:
+            if context.get('time'):
+                context_str += f"\n时间: {context['time']}"
+            if context.get('scene'):
+                context_str += f"\n场景: {context['scene']}"
+        
         prompt = f"""请分析以下文本的情绪：
 
-文本：{text}
+文本：{text}{context_str}
 
 请以JSON格式返回：
 {{
-  "type": "情绪类型（happy/sad/angry/anxious/excited/neutral等）",
+  "type": "情绪类型（happy/sad/angry/anxious/excited/neutral/frustrated/surprised等）",
   "intensity": 0.0到1.0之间的强度值,
   "confidence": 0.0到1.0之间的置信度
 }}
@@ -162,13 +253,31 @@ class AnalyzeEngine:
                 temperature=0.3
             )
             
-            # 简化处理：返回默认情绪
+            # 尝试解析 JSON
+            import json
+            import re
+            
+            # 提取 JSON 部分（可能包含在其他文本中）
+            json_match = re.search(r'\{[^}]+\}', response.content)
+            if json_match:
+                emotion_data = json.loads(json_match.group())
+                
+                # 验证字段
+                if all(k in emotion_data for k in ['type', 'intensity', 'confidence']):
+                    # 确保数值在有效范围内
+                    emotion_data['intensity'] = max(0.0, min(1.0, float(emotion_data['intensity'])))
+                    emotion_data['confidence'] = max(0.0, min(1.0, float(emotion_data['confidence'])))
+                    return emotion_data
+            
+            # JSON 解析失败，返回默认值
             return {
                 "type": "neutral",
                 "intensity": 0.5,
                 "confidence": 0.7
             }
-        except Exception:
+        
+        except Exception as e:
+            # 异常处理：返回默认情绪
             return {
                 "type": "neutral",
                 "intensity": 0.5,

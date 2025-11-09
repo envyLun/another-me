@@ -1,13 +1,19 @@
 """
-AME Storage Module
-存储层模块：Faiss（向量） + Falkor（图谱） + SQLite（元数据）
+AME Storage Module (兼容层)
+
+该模块为了向后兼容，导出 foundation.storage 的类。
+新代码请直接使用: from ame.foundation.storage import ...
 """
-from ame.storage.metadata_store import MetadataStore
-from ame.storage.faiss_store import FaissStore
-from ame.storage.falkor_store import FalkorStore
+from ame.foundation.storage import (
+    VectorStore as FaissStore,  # 兼容别名
+    GraphStore as FalkorStore,   # 兼容别名
+    MetadataStore,
+    DocumentStore,
+)
 
 __all__ = [
     "MetadataStore",
-    "FaissStore",
-    "FalkorStore",
+    "FaissStore",     # 旧名称
+    "FalkorStore",    # 旧名称
+    "DocumentStore",
 ]

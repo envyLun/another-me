@@ -4,7 +4,7 @@
 
 from typing import List, Dict, Any, Optional
 from .base import RetrieverBase, RetrievalResult
-from ame.storage.faiss_store import FaissStore
+from ame.foundation.storage import VectorStore as FaissStore
 
 
 class VectorRetriever(RetrieverBase):

@@ -31,7 +31,7 @@ def tmp_data_dir():
 @pytest.fixture
 async def metadata_store(tmp_data_dir):
     """Create metadata store for testing"""
-    from ame.storage.metadata_store import MetadataStore
+    from ame.foundation.storage import MetadataStore
     store = MetadataStore(db_path=str(tmp_data_dir / "metadata.db"))
     yield store
     # Cleanup happens automatically with tmp_data_dir
@@ -40,8 +40,8 @@ async def metadata_store(tmp_data_dir):
 @pytest.fixture
 async def faiss_store(tmp_data_dir):
     """Create Faiss store for testing"""
-    from ame.storage.faiss_store import FaissStore
-    store = FaissStore(
+    from ame.foundation.storage import VectorStore
+    store = VectorStore(
         dimension=128,  # Smaller dimension for testing
         index_path=str(tmp_data_dir / "faiss.index")
     )
@@ -58,8 +58,8 @@ async def falkor_store():
     Use docker: docker run -p 6379:6379 falkordb/falkordb
     """
     try:
-        from ame.storage.falkor_store import FalkorStore
-        store = FalkorStore(
+        from ame.foundation.storage import GraphStore
+        store = GraphStore(
             host="localhost",
             port=6379,
             graph_name="test_graph"

@@ -1,14 +1,12 @@
 """
-RAG (Retrieval-Augmented Generation) 模块
-用于知识库管理、文档上传、知识检索
+RAG (Retrieval-Augmented Generation) 模块 (兼容层)
+
+该模块为了向后兼容，导出 capabilities.generation 的类。
+新代码请直接使用: from ame.capabilities.generation import RAGGenerator
 """
 
 from .knowledge_base import KnowledgeBase
-from .document_manager import DocumentManager
-from .qa_engine import QAEngine
 
 __all__ = [
     'KnowledgeBase',
-    'DocumentManager',
-    'QAEngine',
 ]

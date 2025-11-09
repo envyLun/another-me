@@ -11,9 +11,9 @@ import logging
 from typing import List, Dict, Optional, Any
 
 from ame.retrieval.base import RetrieverBase, RetrievalResult
-from ame.storage.falkor_store import FalkorStore
-from ame.ner.base import NERBase
-from ame.ner.hybrid_ner import HybridNER
+from ame.foundation.storage import GraphStore as FalkorStore
+from ame.foundation.nlp.ner import NERBase, Entity
+from ame.foundation.nlp.ner import HybridNER
 
 logger = logging.getLogger(__name__)
 
