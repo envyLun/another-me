@@ -7,14 +7,20 @@ from datetime import datetime
 import json
 import re
 
-from ame.foundation.llm import OpenAICaller
+from ame.capabilities.factory import CapabilityFactory
 
 
 class MeetingService:
     """会议纪要服务"""
     
-    def __init__(self, llm_caller: OpenAICaller):
-        self.llm = llm_caller
+    def __init__(self, capability_factory: CapabilityFactory):
+        """初始化会议纪要服务
+        
+        Args:
+            capability_factory: 能力工厂实例
+        """
+        self.factory = capability_factory
+        self.llm = capability_factory.llm
     
     async def summarize(
         self,

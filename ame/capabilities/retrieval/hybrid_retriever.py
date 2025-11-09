@@ -1,15 +1,26 @@
 """
-HybridRetriever - 混合检索器
+HybridRetriever - 混合检索器（Pipeline 封装版）
 """
 from typing import List, Optional, Dict, Any
 import logging
 
 from ame.foundation.embedding import EmbeddingBase
-from ame.foundation.storage import VectorStore, GraphStore, MetadataStore
+from ame.foundation.storage import VectorStore, GraphStore
 from ame.foundation.nlp.ner import NERBase
+from ame.foundation.llm import LLMCallerBase
+from ame.foundation.retrieval import VectorRetriever, GraphRetriever
 from ame.foundation.utils import validate_text
 
 from .base import RetrieverBase, RetrievalResult, RetrievalStrategy
+from .pipeline import RetrievalPipeline
+from .stages import (
+    VectorRetrievalStage,
+    GraphRetrievalStage,
+    FusionStage,
+    SemanticRerankStage,
+    DiversityFilterStage,
+    IntentAdaptiveStage,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -17,13 +28,12 @@ logger = logging.getLogger(__name__)
 
 class HybridRetriever(RetrieverBase):
     """
-    混合检索器
+    混合检索器（Pipeline 封装版）
     
-    特性：
-    - 向量检索 + 图谱检索
-    - 自适应策略选择
-    - 结果融合与重排序
-    - 多样性增强
+    设计：
+    - 不再包含具体检索逻辑，完全委托给 Pipeline
+    - 根据 strategy 参数动态构建不同的 Pipeline
+    - 简化代码，提高可维护性
     """
     
     def __init__(
@@ -31,28 +41,44 @@ class HybridRetriever(RetrieverBase):
         embedding: EmbeddingBase,
         vector_store: VectorStore,
         graph_store: Optional[GraphStore] = None,
-        metadata_store: Optional[MetadataStore] = None,
         ner: Optional[NERBase] = None,
-        vector_weight: float = 0.6,
-        graph_weight: float = 0.4,
+        llm: Optional[LLMCallerBase] = None,
+        pipeline_mode: str = "advanced",
     ):
         """
         Args:
             embedding: 嵌入向量生成器
             vector_store: 向量存储
             graph_store: 图谱存储（可选）
-            metadata_store: 元数据存储（可选）
             ner: 命名实体识别器（可选）
-            vector_weight: 向量检索权重
-            graph_weight: 图谱检索权重
+            llm: LLM 调用器（可选，用于语义重排序）
+            pipeline_mode: Pipeline 模式 ('basic', 'advanced', 'semantic')
         """
         self.embedding = embedding
         self.vector_store = vector_store
         self.graph_store = graph_store
-        self.metadata_store = metadata_store
         self.ner = ner
-        self.vector_weight = vector_weight
-        self.graph_weight = graph_weight
+        self.llm = llm
+        self.pipeline_mode = pipeline_mode
+        
+        # 创建 Foundation 层检索器
+        self.vector_retriever = VectorRetriever(
+            vector_store=vector_store,
+            embedding=embedding
+        )
+        
+        self.graph_retriever = None
+        if graph_store and ner:
+            self.graph_retriever = GraphRetriever(
+                graph_store=graph_store,
+                ner=ner,
+                enable_multi_hop=True
+            )
+        
+        # 预构建默认 Pipeline
+        self.default_pipeline = self._build_pipeline(pipeline_mode)
+        
+        logger.info(f"HybridRetriever 初始化完成 (mode={pipeline_mode})")
     
     async def retrieve(
         self,
@@ -62,218 +88,116 @@ class HybridRetriever(RetrieverBase):
         rerank: bool = False,
         filters: Optional[Dict[str, Any]] = None,
     ) -> List[RetrievalResult]:
-        """检索文档"""
+        """
+        检索文档（通过 Pipeline）
+        
+        Args:
+            query: 查询文本
+            top_k: 返回结果数量
+            strategy: 检索策略（用于动态构建 Pipeline）
+            rerank: 是否重排序（已集成到 Pipeline 中）
+            filters: 过滤条件
+        
+        Returns:
+            检索结果列表
+        """
         if not validate_text(query):
             return []
         
-        # 根据策略选择检索方法
+        # 根据 strategy 选择或构建 Pipeline
         if strategy == RetrievalStrategy.VECTOR_ONLY:
-            results = await self._vector_retrieve(query, top_k, filters)
-        
+            pipeline = self._build_vector_only_pipeline()
         elif strategy == RetrievalStrategy.GRAPH_ONLY:
-            if not self.graph_store:
-                logger.warning("Graph store not available, fallback to vector")
-                results = await self._vector_retrieve(query, top_k, filters)
-            else:
-                results = await self._graph_retrieve(query, top_k, filters)
-        
-        elif strategy == RetrievalStrategy.HYBRID:
-            results = await self._hybrid_retrieve(query, top_k, filters)
-        
+            pipeline = self._build_graph_only_pipeline()
         elif strategy == RetrievalStrategy.ADAPTIVE:
-            results = await self._adaptive_retrieve(query, top_k, filters)
+            pipeline = self._build_adaptive_pipeline(query)
+        else:  # HYBRID
+            pipeline = self.default_pipeline
         
-        else:
-            raise ValueError(f"Unknown strategy: {strategy}")
-        
-        # 重排序
-        if rerank and len(results) > 0:
-            results = await self._rerank(query, results)
-        
-        return results[:top_k]
-    
-    async def _vector_retrieve(
-        self,
-        query: str,
-        top_k: int,
-        filters: Optional[Dict[str, Any]] = None
-    ) -> List[RetrievalResult]:
-        """向量检索"""
-        # 生成查询向量
-        embedding_result = await self.embedding.embed_text(query)
-        
-        # 向量检索
-        vector_results = await self.vector_store.search(
-            query=embedding_result.vector,
-            top_k=top_k,
-            filters=filters
-        )
-        
-        # 获取文档内容
-        results = []
-        for r in vector_results:
-            content = await self._get_content(r["doc_id"])
-            if content:
-                results.append(RetrievalResult(
-                    doc_id=r["doc_id"],
-                    content=content,
-                    score=r["score"],
-                    source="vector",
-                    metadata=r.get("metadata")
-                ))
+        # 执行 Pipeline
+        context = {"filters": filters} if filters else {}
+        results = await pipeline.execute(query, top_k, context)
         
         return results
     
-    async def _graph_retrieve(
-        self,
-        query: str,
-        top_k: int,
-        filters: Optional[Dict[str, Any]] = None
-    ) -> List[RetrievalResult]:
-        """图谱检索"""
-        if not self.graph_store or not self.ner:
-            return []
+    def _build_pipeline(self, mode: str) -> RetrievalPipeline:
+        """
+        构建 Pipeline
         
-        # 提取实体
-        entities = await self.ner.extract(query)
-        entity_names = [e.text for e in entities]
-        
-        if not entity_names:
-            logger.info("No entities found, fallback to vector")
-            return await self._vector_retrieve(query, top_k, filters)
-        
-        # 基于实体检索
-        graph_results = await self.graph_store.search_by_entities(
-            entities=entity_names,
-            top_k=top_k
-        )
-        
-        # 转换结果
-        results = []
-        for r in graph_results:
-            content = await self._get_content(r["doc_id"])
-            if content:
-                results.append(RetrievalResult(
-                    doc_id=r["doc_id"],
-                    content=content,
-                    score=r["score"],
-                    source="graph",
-                    matched_entities=r.get("matched_entities", [])
-                ))
-        
-        return results
+        Args:
+            mode: 'basic', 'advanced', 'semantic'
+        """
+        if mode == "basic":
+            return self._build_basic_pipeline()
+        elif mode == "semantic":
+            return self._build_semantic_pipeline()
+        else:  # advanced
+            return self._build_advanced_pipeline()
     
-    async def _hybrid_retrieve(
-        self,
-        query: str,
-        top_k: int,
-        filters: Optional[Dict[str, Any]] = None
-    ) -> List[RetrievalResult]:
-        """混合检索"""
-        # 向量检索
-        vector_results = await self._vector_retrieve(query, top_k * 2, filters)
-        
-        # 图谱检索
-        graph_results = []
-        if self.graph_store and self.ner:
-            graph_results = await self._graph_retrieve(query, top_k * 2, filters)
-        
-        # 融合结果
-        results = self._fuse_results(vector_results, graph_results)
-        
-        return results
+    def _build_basic_pipeline(self) -> RetrievalPipeline:
+        """Basic: Vector → Rerank"""
+        pipeline = RetrievalPipeline(name="basic")
+        pipeline.add_stage(VectorRetrievalStage(self.vector_retriever, weight=1.0))
+        pipeline.add_stage(SemanticRerankStage(llm_caller=self.llm, use_llm=False))
+        return pipeline
     
-    async def _adaptive_retrieve(
-        self,
-        query: str,
-        top_k: int,
-        filters: Optional[Dict[str, Any]] = None
-    ) -> List[RetrievalResult]:
-        """自适应检索"""
-        # 分析查询特征
+    def _build_advanced_pipeline(self) -> RetrievalPipeline:
+        """Advanced: Vector + Graph → Fusion → Rerank"""
+        pipeline = RetrievalPipeline(name="advanced")
+        pipeline.add_stage(VectorRetrievalStage(self.vector_retriever, weight=0.6))
+        
+        if self.graph_retriever:
+            pipeline.add_stage(GraphRetrievalStage(self.graph_retriever, weight=0.4))
+            pipeline.add_stage(FusionStage(fusion_method="rrf"))
+        
+        pipeline.add_stage(SemanticRerankStage(llm_caller=self.llm, use_llm=False))
+        return pipeline
+    
+    def _build_semantic_pipeline(self) -> RetrievalPipeline:
+        """Semantic: Vector → Intent → Rerank → Diversity"""
+        pipeline = RetrievalPipeline(name="semantic")
+        pipeline.add_stage(VectorRetrievalStage(self.vector_retriever, weight=1.0))
+        pipeline.add_stage(IntentAdaptiveStage(ner_extractor=self.ner))
+        pipeline.add_stage(SemanticRerankStage(llm_caller=self.llm, use_llm=False))
+        pipeline.add_stage(DiversityFilterStage(lambda_param=0.7))
+        return pipeline
+    
+    def _build_vector_only_pipeline(self) -> RetrievalPipeline:
+        """Vector Only: 仅向量检索"""
+        pipeline = RetrievalPipeline(name="vector_only")
+        pipeline.add_stage(VectorRetrievalStage(self.vector_retriever, weight=1.0))
+        return pipeline
+    
+    def _build_graph_only_pipeline(self) -> RetrievalPipeline:
+        """Graph Only: 仅图谱检索"""
+        if not self.graph_retriever:
+            logger.warning("Graph retriever not available, fallback to vector")
+            return self._build_vector_only_pipeline()
+        
+        pipeline = RetrievalPipeline(name="graph_only")
+        pipeline.add_stage(GraphRetrievalStage(self.graph_retriever, weight=1.0))
+        return pipeline
+    
+    def _build_adaptive_pipeline(self, query: str) -> RetrievalPipeline:
+        """
+        Adaptive: 根据查询特征选择 Pipeline
+        
+        规则：
+        - 实体丰富 → advanced（graph 权重高）
+        - 语义查询 → semantic
+        """
+        # 简化版：检查是否包含实体
         has_entities = False
         if self.ner:
-            entities = await self.ner.extract(query)
-            has_entities = len(entities) > 0
+            # 这里简化处理，实际可以异步调用
+            import asyncio
+            try:
+                entities = asyncio.run(self.ner.extract(query))
+                has_entities = len(entities) > 0
+            except:
+                pass
         
-        # 根据查询特征选择策略
-        if has_entities and self.graph_store:
-            # 实体丰富 → 图谱检索为主
-            strategy = RetrievalStrategy.HYBRID
-            self.vector_weight = 0.3
-            self.graph_weight = 0.7
+        if has_entities and self.graph_retriever:
+            return self._build_advanced_pipeline()
         else:
-            # 语义查询 → 向量检索为主
-            strategy = RetrievalStrategy.HYBRID
-            self.vector_weight = 0.7
-            self.graph_weight = 0.3
-        
-        return await self.retrieve(query, top_k, strategy, rerank=False, filters=filters)
-    
-    def _fuse_results(
-        self,
-        vector_results: List[RetrievalResult],
-        graph_results: List[RetrievalResult]
-    ) -> List[RetrievalResult]:
-        """融合向量和图谱检索结果"""
-        # 创建文档映射
-        doc_map: Dict[str, RetrievalResult] = {}
-        
-        # 添加向量结果
-        for r in vector_results:
-            if r.doc_id not in doc_map:
-                r.score *= self.vector_weight
-                doc_map[r.doc_id] = r
-        
-        # 融合图谱结果
-        for r in graph_results:
-            if r.doc_id in doc_map:
-                # 已存在，融合分数
-                existing = doc_map[r.doc_id]
-                existing.score += r.score * self.graph_weight
-                existing.source = "hybrid"
-                if r.matched_entities:
-                    existing.matched_entities = r.matched_entities
-            else:
-                # 新结果
-                r.score *= self.graph_weight
-                doc_map[r.doc_id] = r
-        
-        # 排序并返回
-        results = list(doc_map.values())
-        results.sort(key=lambda x: x.score, reverse=True)
-        
-        return results
-    
-    async def _rerank(
-        self,
-        query: str,
-        results: List[RetrievalResult]
-    ) -> List[RetrievalResult]:
-        """重排序（简化版 - 基于关键词匹配）"""
-        query_lower = query.lower()
-        query_tokens = set(query_lower.split())
-        
-        for result in results:
-            content_lower = result.content.lower()
-            content_tokens = set(content_lower.split())
-            
-            # 计算关键词重叠度
-            overlap = len(query_tokens.intersection(content_tokens))
-            overlap_ratio = overlap / len(query_tokens) if query_tokens else 0
-            
-            # 调整分数
-            result.score = result.score * 0.7 + overlap_ratio * 0.3
-        
-        # 重新排序
-        results.sort(key=lambda x: x.score, reverse=True)
-        return results
-    
-    async def _get_content(self, doc_id: str) -> Optional[str]:
-        """获取文档内容"""
-        if self.metadata_store:
-            metadata = await self.metadata_store.get(doc_id)
-            if metadata:
-                return metadata.get("content")
-        
-        return None
+            return self._build_semantic_pipeline()

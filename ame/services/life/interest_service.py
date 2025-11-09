@@ -1,29 +1,33 @@
 """
 兴趣追踪服务
 职责: 兴趣演化分析、推荐生成
+
+设计: 通过 CapabilityFactory 注入能力
 """
 from typing import List
 from datetime import datetime, timedelta
 from collections import Counter
+import logging
 
-from ame.foundation.nlp.ner import HybridNER
+from ame.capabilities.factory import CapabilityFactory
 from ame.capabilities.memory import MemoryManager
-from ame.capabilities.generation import RAGGenerator
+from ame.capabilities.generation import StyleGenerator
+from ame.capabilities.analysis import InsightGenerator
 from ame.models.report_models import InterestReport, InterestTopic
+
+logger = logging.getLogger(__name__)
 
 
 class InterestService:
     """兴趣追踪服务"""
     
-    def __init__(
-        self,
-        ner_extractor: HybridNER,
-        memory_manager: MemoryManager,
-        rag_generator: RAGGenerator
-    ):
-        self.ner = ner_extractor
-        self.memory = memory_manager
-        self.generator = rag_generator
+    def __init__(self, capability_factory: CapabilityFactory):
+        self.factory = capability_factory
+        self.ner = factory.ner
+        self.memory_manager = factory.create_memory_manager(cache_key="interest_memory")
+        self.style_generator = factory.create_style_generator(with_retriever=True, cache_key="interest_style")
+        self.insight_generator = factory.create_insight_generator(cache_key="interest_insight")
+        logger.info("InterestService 初始化完成")
     
     async def track_interests(
         self,
@@ -44,10 +48,10 @@ class InterestService:
         start_date = end_date - timedelta(days=period_days)
         
         # Step 1: 收集数据
-        life_records = await self.memory.retrieve_by_timerange(
-            start_time=start_date,
-            end_time=end_date,
-            filters={"doc_type": "life", "user_id": user_id}
+        life_records = await self.memory_manager.retrieve(
+            query="兴趣 爱好 活动",
+            top_k=100,
+            filters={"category": "life", "tags": [user_id]}
         )
         
         if not life_records:
@@ -91,7 +95,11 @@ class InterestService:
         )
         
         # Step 6: 生成推荐
-        recommendations = await self._generate_recommendations(top_interests, new_interests)
+        recommendations = await self.style_generator.generate_styled_text(
+            template="interest_recommendations",
+            data={"topics": [t.topic for t in top_interests[:3]], "new_interests": new_interests},
+            tone="casual"
+        )
         
         # Step 7: 生成报告
         report = self._generate_report(

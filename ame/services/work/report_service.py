@@ -1,36 +1,38 @@
 """
 工作报告生成服务
 职责: 周报/日报生成
+
+设计: 通过 CapabilityFactory 注入能力
 """
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+import logging
 
-from ame.capabilities.analysis import DataAnalyzer
-from ame.capabilities.generation import RAGGenerator
+from ame.capabilities.factory import CapabilityFactory
+from ame.capabilities.analysis import DataAnalyzer, InsightGenerator
+from ame.capabilities.generation import StyleGenerator
 from ame.capabilities.memory import MemoryManager
 from ame.models.report_models import WeeklyReport, DailyReport, TaskSummary, Achievement
+
+logger = logging.getLogger(__name__)
 
 
 class ReportService:
     """工作报告生成服务"""
     
-    def __init__(
-        self,
-        data_analyzer: DataAnalyzer,
-        rag_generator: RAGGenerator,
-        memory_manager: MemoryManager
-    ):
+    def __init__(self, capability_factory: CapabilityFactory):
         """
         初始化报告服务
         
         Args:
-            data_analyzer: 数据分析器 (Capabilities Layer)
-            rag_generator: RAG 生成器 (Capabilities Layer)
-            memory_manager: 记忆管理器 (Capabilities Layer)
+            capability_factory: 能力工厂实例(注入)
         """
-        self.analyzer = data_analyzer
-        self.generator = rag_generator
-        self.memory = memory_manager
+        self.factory = capability_factory
+        self.analyzer = factory.create_data_analyzer(with_retriever=True, cache_key="report_analyzer")
+        self.insight_generator = factory.create_insight_generator(cache_key="report_insight")
+        self.style_generator = factory.create_style_generator(with_retriever=True, cache_key="report_style")
+        self.memory_manager = factory.create_memory_manager(cache_key="report_memory")
+        logger.info("ReportService 初始化完成")
     
     async def generate_weekly_report(
         self,
@@ -59,19 +61,19 @@ class ReportService:
         )
         
         # Step 2: 分析数据
-        insights = await self.analyzer.analyze(
+        insights = await self.insight_generator.extract_insights(
             documents=work_logs,
             metrics=["key_tasks", "achievements", "challenges", "time_stats"]
         )
         
         # Step 3: 生成报告
-        report_content = await self.generator.generate(
+        report_content = await self.style_generator.generate_styled_text(
             template="weekly_report",
             data={
                 "period": f"{start_date.date()} ~ {end_date.date()}",
                 "insights": insights
             },
-            style=style
+            tone=style
         )
         
         # Step 4: 结构化输出
@@ -112,18 +114,18 @@ class ReportService:
             filters={"doc_type": "work_log"}
         )
         
-        insights = await self.analyzer.analyze(
+        insights = await self.insight_generator.extract_insights(
             documents=work_logs,
             metrics=["key_tasks", "achievements", "highlights"]
         )
         
-        report_content = await self.generator.generate(
+        report_content = await self.style_generator.generate_styled_text(
             template="daily_report",
             data={
                 "date": date.date(),
                 "insights": insights
             },
-            style=style
+            tone=style
         )
         
         tasks = self._parse_task_summaries(insights.get("key_tasks", []))

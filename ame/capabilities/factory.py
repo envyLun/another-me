@@ -80,25 +80,29 @@ class CapabilityFactory:
     
     def create_retriever(
         self,
-        use_vector: bool = True,
-        use_graph: bool = False,
+        pipeline_mode: str = "advanced",
         cache_key: Optional[str] = None
     ) -> HybridRetriever:
         """
-        创建混合检索器
+        创建混合检索器（基于 Pipeline）
         
         Args:
-            use_vector: 是否使用向量检索
-            use_graph: 是否使用图谱检索
+            pipeline_mode: Pipeline 模式 ('basic', 'advanced', 'semantic')
             cache_key: 缓存键（提供后会复用实例）
+        
+        Returns:
+            HybridRetriever 实例
         """
         if cache_key and cache_key in self._capabilities_cache:
             return self._capabilities_cache[cache_key]
         
         retriever = HybridRetriever(
-            vector_store=self.vector_store if use_vector else None,
-            graph_store=self.graph_store if use_graph else None,
-            embedding_function=self.embedding
+            embedding=self.embedding,
+            vector_store=self.vector_store,
+            graph_store=self.graph_store,
+            ner=self.ner,
+            llm=self.llm,
+            pipeline_mode=pipeline_mode
         )
         
         if cache_key:

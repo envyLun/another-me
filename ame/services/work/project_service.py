@@ -5,21 +5,32 @@
 from typing import List, Dict
 from datetime import datetime
 
-from ame.capabilities.retrieval import HybridRetriever
-from ame.capabilities.analysis import DataAnalyzer
+from ame.capabilities.factory import CapabilityFactory
 from ame.models.report_models import ProjectProgress
 
 
 class ProjectService:
     """项目进度追踪服务"""
     
-    def __init__(
-        self,
-        hybrid_retriever: HybridRetriever,
-        data_analyzer: DataAnalyzer
-    ):
-        self.retriever = hybrid_retriever
-        self.analyzer = data_analyzer
+    def __init__(self, capability_factory: CapabilityFactory):
+        """初始化项目进度追踪服务
+        
+        Args:
+            capability_factory: 能力工厂实例
+        """
+        self.factory = capability_factory
+        
+        # 使用 advanced pipeline 进行项目相关文档检索
+        self.retriever = capability_factory.create_retriever(
+            pipeline_mode="advanced",
+            cache_key="project_retriever"
+        )
+        
+        # 数据分析器，用于项目状态分析
+        self.analyzer = capability_factory.create_data_analyzer(
+            with_retriever=True,
+            cache_key="project_analyzer"
+        )
     
     async def track_progress(
         self,

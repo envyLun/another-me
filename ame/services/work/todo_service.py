@@ -1,24 +1,27 @@
 """
 待办事项管理服务
 职责: 智能整理、优先级排序
+
+设计: 通过 CapabilityFactory 注入能力
 """
 from typing import List, Dict, Optional
+import logging
 
+from ame.capabilities.factory import CapabilityFactory
 from ame.capabilities.intent import IntentRecognizer
-from ame.foundation.llm import OpenAICaller
 from ame.models.report_models import OrganizedTodos, TaskInfo
+
+logger = logging.getLogger(__name__)
 
 
 class TodoService:
     """待办事项管理服务"""
     
-    def __init__(
-        self,
-        llm_caller: OpenAICaller,
-        intent_recognizer: Optional[IntentRecognizer] = None
-    ):
-        self.llm = llm_caller
-        self.intent = intent_recognizer
+    def __init__(self, capability_factory: CapabilityFactory):
+        self.factory = capability_factory
+        self.llm = factory.llm
+        self.intent_recognizer = factory.create_intent_recognizer(cache_key="todo_intent")
+        logger.info("TodoService 初始化完成")
     
     async def organize_todos(
         self,
@@ -63,12 +66,12 @@ class TodoService:
     
     async def _parse_task(self, todo: str) -> TaskInfo:
         """解析单个任务"""
-        if self.intent:
-            intent_result = await self.intent.recognize(todo)
+        if self.intent_recognizer:
+            intent_result = await self.intent_recognizer.recognize(todo)
             return TaskInfo(
                 content=todo,
                 entities=intent_result.entities,
-                category=intent_result.category
+                category=intent_result.metadata.get("category")
             )
         else:
             return TaskInfo(content=todo)

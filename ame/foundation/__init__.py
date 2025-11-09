@@ -26,6 +26,9 @@ from .storage import StorageBase, VectorStore, GraphStore, MetadataStore
 # Embedding
 from .embedding import EmbeddingBase, OpenAIEmbedding
 
+# Retrieval
+from .retrieval import RetrieverBase, RetrievalResult, VectorRetriever, GraphRetriever
+
 # NLP
 from .nlp.emotion import EmotionDetectorBase, HybridEmotionDetector
 from .nlp.ner import NERBase, HybridNER, Entity
@@ -56,6 +59,12 @@ __all__ = [
     # Embedding
     "EmbeddingBase",
     "OpenAIEmbedding",
+    
+    # Retrieval
+    "RetrieverBase",
+    "RetrievalResult",
+    "VectorRetriever",
+    "GraphRetriever",
     
     # NLP
     "EmotionDetectorBase",

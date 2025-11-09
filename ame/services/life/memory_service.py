@@ -1,19 +1,29 @@
 """
 记忆回顾服务
 职责: 记忆检索、时间线生成
+
+设计: 通过 CapabilityFactory 注入能力
 """
 from typing import List, Optional
 from datetime import datetime, timedelta
+import logging
 
+from ame.capabilities.factory import CapabilityFactory
 from ame.capabilities.retrieval import HybridRetriever
 from ame.models.domain import Document
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryService:
     """记忆回顾服务"""
     
-    def __init__(self, hybrid_retriever: HybridRetriever):
-        self.retriever = hybrid_retriever
+    def __init__(self, capability_factory: CapabilityFactory):
+        self.retriever = capability_factory.create_retriever(
+            pipeline_mode="semantic",
+            cache_key="memory_retriever"
+        )
+        logger.info("MemoryService 初始化完成")
     
     async def recall(
         self,
