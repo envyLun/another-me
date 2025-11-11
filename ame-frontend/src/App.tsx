@@ -8,6 +8,7 @@ import {
   ThunderboltOutlined,
   HeartOutlined,
   ApartmentOutlined,
+  SmileOutlined,
 } from '@ant-design/icons';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import HomePage from './pages/HomePage';
@@ -18,6 +19,7 @@ import ConfigPage from './pages/ConfigPage';
 import WorkPage from './pages/WorkPage';
 import LifePage from './pages/LifePage';
 import GraphPage from './pages/GraphPage';
+import CompanionPage from './pages/CompanionPage';
 import { ErrorBoundary } from './components/common';
 
 const { Header, Content, Sider } = Layout;
@@ -34,6 +36,7 @@ function App() {
       children: [
         { key: '/work', icon: <ThunderboltOutlined />, label: '💼 工作模式' },
         { key: '/life', icon: <HeartOutlined />, label: '🏡 生活模式' },
+        { key: '/companion', icon: <SmileOutlined />, label: '😊 陪伴模式' },
       ],
     },
     { key: '/chat', icon: <MessageOutlined />, label: 'MEM 对话' },
@@ -67,7 +70,12 @@ function App() {
             mode="inline"
             selectedKeys={[location.pathname]}
             items={menuItems}
-            onClick={({ key }) => navigate(key)}
+            onClick={({ key, item }) => {
+              // 确保key是有效路径才导航
+              if (key && typeof key === 'string' && key.startsWith('/')) {
+                navigate(key);
+              }
+            }}
             style={{ height: '100%', borderRight: 0 }}
           />
         </Sider>
@@ -86,6 +94,7 @@ function App() {
                 <Route path="/" element={<HomePage />} />
                 <Route path="/work" element={<WorkPage />} />
                 <Route path="/life" element={<LifePage />} />
+                <Route path="/companion" element={<CompanionPage />} />
                 <Route path="/chat" element={<ChatPage />} />
                 <Route path="/knowledge" element={<KnowledgePage />} />
                 <Route path="/graph" element={<GraphPage />} />
