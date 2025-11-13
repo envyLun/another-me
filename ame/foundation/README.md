@@ -89,6 +89,10 @@ print(f"Result: {result.value}, Confidence: {result.confidence}, Level: {result.
 - ✅ 请求缓存（基于消息内容）
 - ✅ 流式输出支持
 - ✅ 完整的错误处理
+- ✅ 多轮对话支持
+- ✅ 自动上下文压缩
+- ✅ 双模式上下文管理（SESSION/DOCUMENT）
+- ✅ 灵活的导出能力（export_all / export_important）
 
 **快速开始**:
 ```python
@@ -139,6 +143,68 @@ async for chunk in llm.generate_stream(
 # 清空缓存
 llm.clear_cache()
 print(f"Cache size: {llm.get_cache_size()}")
+
+# 多轮对话
+conversation = llm.create_conversation(
+    system_prompt="你是一个友好的助手"
+)
+
+# 第一轮对话
+response1 = await llm.chat_with_history(
+    conversation=conversation,
+    user_message="你好"
+)
+
+# 第二轮对话（自动包含历史）
+response2 = await llm.chat_with_history(
+    conversation=conversation,
+    user_message="你能帮我做什么？"
+)
+
+print(f"历史消息数: {conversation.get_message_count()}")
+
+# 流式多轮对话
+async for chunk in llm.chat_stream_with_history(
+    conversation=conversation,
+    user_message="给我讲个故事"
+):
+    print(chunk, end="", flush=True)
+
+# 双模式上下文管理
+from ame.foundation.llm import ContextMode
+
+# 模式1: SESSION - 用户对话，保留完整历史
+session_conv = llm.create_conversation(
+    system_prompt="你是助手",
+    mode=ContextMode.SESSION
+)
+
+# ... 多轮对话 ...
+
+# 导出关键信息（重要消息 + 最近5条对话）
+important_data = session_conv.export_important()
+
+# 或者导出所有信息（包括归档）
+all_data = session_conv.export_all()
+
+# 对话结束，清空并导出
+export_data = session_conv.clear_and_export()
+
+# 模式2: DOCUMENT - 文档处理，自动静默压缩
+doc_conv = llm.create_conversation(
+    system_prompt="分析文档",
+    mode=ContextMode.DOCUMENT
+)
+
+# 处理长文本（PDF、TXT等）
+doc_conv.add_message("user", long_document_content, important=True)
+response = await llm.chat_with_history(doc_conv, "")
+
+# 处理完成，导出 LLM 分析结果
+important_data = doc_conv.export_important()
+# important_data 包含：
+#   - llm_analysis: LLM 的所有分析结果
+#   - important_inputs: 标记为重要的输入片段
 ```
 
 **API 文档**:
@@ -146,6 +212,11 @@ print(f"Cache size: {llm.get_cache_size()}")
   - `generate(messages, temperature, max_tokens, model, **kwargs) -> LLMResponse`: 生成回复
   - `generate_stream(messages, ...) -> AsyncIterator[str]`: 流式生成
   - `generate_with_system(prompt, system_prompt, ...) -> LLMResponse`: 便捷方法
+  - `create_conversation(system_prompt) -> ConversationHistory`: 创建多轮对话
+  - `chat_with_history(conversation, user_message, ...) -> LLMResponse`: 多轮对话
+  - `chat_stream_with_history(conversation, user_message, ...) -> AsyncIterator[str]`: 流式多轮对话
+  - `estimate_tokens(text) -> int`: 估算 token 数量
+  - `compress_messages(messages, max_tokens) -> List[Dict]`: 压缩消息列表
   - `get_model_name() -> str`: 获取模型名称
   - `is_configured() -> bool`: 检查是否已配置
   - `clear_cache()`: 清空缓存
@@ -160,6 +231,60 @@ print(f"Cache size: {llm.get_cache_size()}")
     - `total_tokens`: 总 Token 数
   - `metadata: Dict`: 元数据
   - `to_dict() -> dict`: 转换为字典
+
+- `ConversationHistory`: 多轮对话历史管理器
+  - `add_message(role, content, metadata, important)`: 添加消息
+  - `get_messages() -> List[Dict]`: 获取所有消息
+  - `get_message_count() -> int`: 获取消息数量
+  - `get_last_n_messages(n) -> List[Dict]`: 获取最后 N 条消息
+  - `clear()`: 清空历史
+  - `export_all() -> Dict`: 导出所有消息（包括归档）
+  - `export_important() -> Dict`: 导出关键信息（根据 mode 自动选择策略）
+  - `clear_and_export() -> Dict`: 清空并导出关键信息
+  - `get_compression_stats() -> Dict`: 获取压缩统计信息
+  - `archive_removed_messages(messages)`: 归档被移除的消息
+
+- `ContextMode`: 上下文管理模式枚举
+  - `SESSION`: 会话模式，用于用户对话
+  - `DOCUMENT`: 文档模式，用于长文本处理
+
+- `ConversationMessage`: 对话消息数据类
+  - `role: str`: 角色（user/assistant/system）
+  - `content: str`: 消息内容
+  - `timestamp: datetime`: 时间戳
+  - `metadata: Dict`: 元数据
+  - `compressed: bool`: 是否为压缩后的消息
+  - `to_dict() -> dict`: 转换为 OpenAI 格式
+  - `to_export_dict() -> dict`: 转换为导出格式
+
+**上下文压缩**:
+
+当对话历史过长时，OpenAICaller 会自动压缩上下文：
+
+```python
+llm = OpenAICaller(
+    api_key="sk-...",
+    max_context_tokens=4000  # 设置最大上下文 token 数
+)
+
+# 自动压缩（无感执行）
+conversation = llm.create_conversation()
+
+# 进行多轮对话，超过限制时自动压缩
+for i in range(20):
+    response = await llm.chat_with_history(
+        conversation=conversation,
+        user_message=f"第 {i} 个问题"
+    )
+    # 日志会提示: "上下文过长，正在自动压缩..."
+    # 日志会提示: "上下文压缩完成：移除 X 条消息"
+```
+
+压缩策略：
+- ✅ 保留系统消息（system）
+- ✅ 保留最新的对话消息
+- ✅ 从旧到新移除消息，直到满足 token 限制
+- ✅ 日志记录压缩过程
 
 ### 3. Storage (存储能力) - 待实现
 
