@@ -172,13 +172,13 @@ export default function HomePage() {
         </Title>
         <Paragraph style={{ fontSize: '15px', lineHeight: '2' }}>
           <strong>1. 配置系统</strong><br />
-          前往 <a onClick={() => navigate('/config')}>配置</a> 页面，设置你的 OpenAI API Key 和相关参数
+          前往 <a href="#" onClick={(e) => { e.preventDefault(); navigate('/config'); }}>配置</a> 页面，设置你的 OpenAI API Key 和相关参数
           <br /><br />
           <strong>2. 构建知识库</strong><br />
-          在 <a onClick={() => navigate('/knowledge')}>RAG 知识库</a> 上传你的文档、笔记、资料，构建专属知识库
+          在 <a href="#" onClick={(e) => { e.preventDefault(); navigate('/knowledge'); }}>RAG 知识库</a> 上传你的文档、笔记、资料，构建专属知识库
           <br /><br />
           <strong>3. 开始对话</strong><br />
-          在 <a onClick={() => navigate('/chat')}>MEM 对话</a> 与你的 AI 分身交流，它会模仿你的说话风格
+          在 <a href="#" onClick={(e) => { e.preventDefault(); navigate('/chat'); }}>MEM 对话</a> 与你的 AI 分身交流，它会模仿你的说话风格
         </Paragraph>
         <Space style={{ marginTop: 16 }}>
           <Button 
