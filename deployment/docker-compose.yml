@@ -24,7 +24,7 @@ services:
   backend:
     build:
       context: ..
-      dockerfile: backend/Dockerfile
+      dockerfile: deployment/docker/Dockerfile.backend
     container_name: another-me-backend
     ports:
       - "8000:8000"
@@ -55,7 +55,7 @@ services:
   frontend:
     build:
       context: ..
-      dockerfile: frontend/Dockerfile
+      dockerfile: deployment/docker/Dockerfile.frontend
     container_name: another-me-frontend
     ports:
       - "80:80"

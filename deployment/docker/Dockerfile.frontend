@@ -3,12 +3,13 @@ FROM node:18-alpine as builder
 
 WORKDIR /app
 
-# 安装依赖
-COPY frontend/package*.json ./
+# 复制依赖清单并安装依赖（需要 devDependencies 以便运行 tsc）
+COPY ame-frontend/package*.json ./
+ENV NODE_ENV=development
 RUN npm ci
 
 # 复制代码并构建
-COPY frontend .
+COPY ame-frontend .
 RUN npm run build
 
 # 生产镜像

@@ -4,13 +4,13 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # 安装依赖
-COPY backend/requirements.txt .
+COPY ame-backend/requirements.txt ./backend-requirements.txt
 COPY ame/requirements.txt ./ame-requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt && \
+RUN pip install --no-cache-dir -r backend-requirements.txt && \
     pip install --no-cache-dir -r ame-requirements.txt
 
 # 复制代码
-COPY backend/app ./app
+COPY ame-backend/app ./app
 COPY ame ./ame
 
 # 创建数据目录
