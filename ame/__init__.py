@@ -120,10 +120,7 @@ from .services.life import (
     MemoryService,
 )
 
-# ========== 旧模块（已删除，保留兼容性导入）==========
-from .data_processor.processor import DataProcessor
-from .data_processor.base import DataProcessorBase, ProcessedData
-from .data_processor.document_processor import DocumentProcessor
+
 
 # 导出模型
 from .models.domain import (
@@ -232,15 +229,7 @@ __all__ = [
     # Life
     "MoodService",
     "InterestService",
-    "MemoryService",
-    
-    # ========== 旧模块（兼容性） ==========
-    # Data Processor (旧模块)
-    "DataProcessor",
-    "DataProcessorBase",
-    "ProcessedData",
-    "DocumentProcessor",
-    
+    "MemoryService",    
     
     # 域模型
     "Document",
